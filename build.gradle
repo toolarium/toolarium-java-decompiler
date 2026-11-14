@@ -1,8 +1,7 @@
 /*
  * build.gradle
  *
- * Copyright by toolarium-java-decompiler, all rights reserved.
- * MIT License: https://mit-license.org
+ * Copyright by toolarium, all rights reserved.
  */
 plugins {
   id 'com.github.johnrengelman.shadow' version '8.1.1'
@@ -11,21 +10,38 @@ plugins {
 apply from: "https://raw.githubusercontent.com/toolarium/common-gradle-build/master/gradle/common.gradle"
 
 
+/************************************************************************************************************************
+ * Allow additional root-level files not in the common-gradle-build default whitelist
+ ************************************************************************************************************************/
+addCommonGradlePropertyList("allowedMainFiles", "$rootDirectory/ARCHITECTURE.md")
+
+
 /***************************************************************************************
  * define the main class name
  ***************************************************************************************/
-mainClassName = "com.github.toolarium.java.decompiler.MyApplication"
+mainClassName = "com.github.toolarium.java.decompiler.JavaDecompiler"
+
+application {
+    mainClass.set(mainClassName)
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    mergeServiceFiles()
+}
 
 
 /************************************************************************************************************************
  * Define project dependencies
  ************************************************************************************************************************/
 dependencies {
-    // see https://docs.gradle.org/current/userguide/java_library_plugin.html
+    // bytecode reading
+    implementation "org.ow2.asm:asm:9.7.1"
+    implementation "org.ow2.asm:asm-tree:9.7.1"
+    implementation "org.ow2.asm:asm-util:9.7.1"
 
-    // utilities    
-    //implementation "net.sf.jptools:jptools:${commonGradleJptoolsVersion}"
-    //implementation "net.sf.jptools:jptools:${commonGradleJptoolsVersion}:slf4j-redirect"
+    // CLI
+    implementation "info.picocli:picocli:4.7.6"
 
     // logging
     implementation "org.slf4j:slf4j-api:${commonGradleSlf4jApiVersion}"

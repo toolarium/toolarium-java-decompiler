@@ -67,3 +67,13 @@ nb-configuration.xml
 # vi swap files
 *.swp
 *.swo
+
+# Claude Code
+CLAUDE.md
+
+# Disallowed checked-in files (auto-cleaned by common-gradle-build)
+.classpath
+.project
+
+# Disallowed checked-in files (auto-cleaned by common-gradle-build)
+.settings
