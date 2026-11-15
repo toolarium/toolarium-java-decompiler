@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.9.0 - 2026-11-15
+## [ 0.9.1 ] - 2026-11-15
+
+## [ 0.9.0 ] - 2026-11-15
 ### Added
 - Archive output: decompile directly into JAR, ZIP, WAR, or EAR archives via `-o output.jar`.
 - Parallel batch decompilation using available processors by default.
@@ -17,13 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional banner and source file header comments.
 - Class include/exclude regex filtering for selective batch decompilation.
 
-## 0.8.0 - 2026-11-14
+## [ 0.8.0 ] - 2026-11-14
 ### Added
 - Sealed class support: `sealed`, `permits`, and `non-sealed` modifiers.
 - Text block recovery: multi-line string literals emitted as text blocks (`"""..."""`).
 - Anonymous and local class reconstruction.
 
-## 0.7.0 - 2026-11-13
+## [ 0.7.0 ] - 2026-11-13
 ### Added
 - Lambda expression and method reference reconstruction.
 - String switch reconstruction.
@@ -39,14 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expression improvements: compound assignments, increment/decrement, boolean return simplification, else-if chains, precedence-aware parenthesization.
 - Type simplification for static field access expressions.
 
-## 0.6.0 - 2026-11-03
+## [ 0.6.0 ] - 2026-11-03
 ### Added
 - Fluent `DecompilerBuilder` for one-line decompilation of files, directories, and JARs.
 - Modern Java pattern support: records, enums, inner classes, assert, try-with-resources.
 - Control flow reconstruction: do-while, for, for-each, switch, try-catch/finally.
 - Expression simplification and type simplification.
 
-## 0.5.0 - 2026-10-11
+## [ 0.5.0 ] - 2026-10-11
 ### Added
 - Java bytecode decompiler library with public API (`IDecompiler`, `IClassSource`, `IResultSaver`).
 - Decompilation of `.class` files, directories, and JAR/ZIP archives.
