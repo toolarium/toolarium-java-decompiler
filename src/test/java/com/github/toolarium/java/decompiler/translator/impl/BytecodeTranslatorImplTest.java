@@ -1150,6 +1150,56 @@ public class BytecodeTranslatorImplTest {
 
 
     /**
+     * Test that setMaxTranslationTimeSeconds can be set to a positive value and zero.
+     */
+    @Test
+    void testSetMaxTranslationTimeSeconds() {
+        IBytecodeTranslator freshTranslator = BytecodeTranslatorFactory.getInstance().getBytecodeTranslator();
+
+        // Setting a positive limit should not throw
+        freshTranslator.setMaxTranslationTimeSeconds(10);
+
+        // Translation should still work normally with a generous limit
+        MethodNode method = buildStaticIntMethod("timeLimited", DESC_INT);
+        method.visitInsn(Opcodes.ICONST_5);
+        method.visitInsn(Opcodes.IRETURN);
+        method.visitMaxs(1, 0);
+
+        List<IStatement> result = freshTranslator.translate(method, TEST_CLASS);
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+
+        // Setting zero should disable the limit without error
+        freshTranslator.setMaxTranslationTimeSeconds(0);
+
+        result = freshTranslator.translate(method, TEST_CLASS);
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+    }
+
+
+    /**
+     * Test that a negative value for setMaxTranslationTimeSeconds disables the limit.
+     */
+    @Test
+    void testSetMaxTranslationTimeSecondsNegative() {
+        IBytecodeTranslator freshTranslator = BytecodeTranslatorFactory.getInstance().getBytecodeTranslator();
+
+        // Setting a negative value should disable the limit
+        freshTranslator.setMaxTranslationTimeSeconds(-5);
+
+        MethodNode method = buildStaticIntMethod("noLimit", DESC_INT);
+        method.visitInsn(Opcodes.ICONST_1);
+        method.visitInsn(Opcodes.IRETURN);
+        method.visitMaxs(1, 0);
+
+        List<IStatement> result = freshTranslator.translate(method, TEST_CLASS);
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+    }
+
+
+    /**
      * Test stack underflow produces placeholder instead of crash.
      */
     @Test

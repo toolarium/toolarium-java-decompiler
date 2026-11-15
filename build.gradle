@@ -47,3 +47,136 @@ dependencies {
     implementation "org.slf4j:slf4j-api:${commonGradleSlf4jApiVersion}"
     implementation "ch.qos.logback:logback-classic:${commonGradleLogbackVersion}"
 }
+
+
+/************************************************************************************************************************
+ * Performance benchmark: downloads competitor decompilers and measures throughput
+ ************************************************************************************************************************/
+configurations {
+    performanceBenchmarkTarget
+}
+
+dependencies {
+    performanceBenchmarkTarget "org.apache.commons:commons-lang3:3.17.0"
+}
+
+task downloadDecompilers {
+    description = 'Download competitor decompiler JARs for benchmarking.'
+    group = 'performance'
+
+    def toolsDir = file("${buildDir}/performance/tools")
+
+    def decompilers = [
+        'vineflower-1.11.1.jar': 'https://github.com/Vineflower/vineflower/releases/download/1.11.1/vineflower-1.11.1.jar',
+        'cfr-0.152.jar'        : 'https://github.com/leibnitz27/cfr/releases/download/0.152/cfr-0.152.jar',
+        'procyon-0.6.0.jar'    : 'https://github.com/mstrobel/procyon/releases/download/v0.6.0/procyon-decompiler-0.6.0.jar',
+    ]
+
+    outputs.dir toolsDir
+
+    doLast {
+        toolsDir.mkdirs()
+        decompilers.each { name, url ->
+            def target = new File(toolsDir, name)
+            if (!target.exists()) {
+                logger.lifecycle("Downloading ${name}...")
+                new URL(url).withInputStream { is -> target.bytes = is.bytes }
+            } else {
+                logger.lifecycle("${name} already present.")
+            }
+        }
+    }
+}
+
+task performance {
+    description = 'Run decompiler performance benchmark against competitors.'
+    group = 'performance'
+    dependsOn shadowJar, downloadDecompilers
+
+    def toolsDir = file("${buildDir}/performance/tools")
+    def resultsDir = file("${buildDir}/performance/results")
+
+    doLast {
+        resultsDir.mkdirs()
+
+        def toolariumJar = shadowJar.archiveFile.get().asFile
+        def vineflowerJar = new File(toolsDir, 'vineflower-1.11.1.jar')
+        def cfrJar = new File(toolsDir, 'cfr-0.152.jar')
+        def procyonJar = new File(toolsDir, 'procyon-0.6.0.jar')
+
+        def targetJar = configurations.performanceBenchmarkTarget.resolve().first()
+        def classCount = 0
+        new java.util.zip.ZipFile(targetJar).withCloseable { zf ->
+            classCount = zf.entries().findAll { it.name.endsWith('.class') }.size()
+        }
+
+        logger.lifecycle("")
+        logger.lifecycle("================================================================")
+        logger.lifecycle("  Java Decompiler Performance Benchmark")
+        logger.lifecycle("  Target: ${targetJar.name} (${classCount} classes)")
+        logger.lifecycle("  Java: ${System.getProperty('java.version')}")
+        logger.lifecycle("================================================================")
+        logger.lifecycle("")
+
+        def warmupRuns = 1
+        def benchmarkRuns = 3
+
+        def decompilers = [
+            [name: 'toolarium (parallel)',   jar: toolariumJar,  args: { File out, File input -> ['-o', out.absolutePath, input.absolutePath] }],
+            [name: 'toolarium (sequential)', jar: toolariumJar,  args: { File out, File input -> ['-t', '1', '-o', out.absolutePath, input.absolutePath] }],
+            [name: 'Vineflower',             jar: vineflowerJar, args: { File out, File input -> [input.absolutePath, out.absolutePath] }],
+            [name: 'CFR',                    jar: cfrJar,        args: { File out, File input -> [input.absolutePath, '--outputdir', out.absolutePath] }],
+            [name: 'Procyon',                jar: procyonJar,    args: { File out, File input -> ['-jar', input.absolutePath, '-o', out.absolutePath] }],
+        ]
+
+        // Warmup
+        logger.lifecycle("Warming up (${warmupRuns} run)...")
+        decompilers.each { d ->
+            def outDir = new File(resultsDir, "warmup_${d.name.replaceAll('[^a-zA-Z0-9]', '_')}")
+            outDir.mkdirs()
+            try {
+                def cmd = ['java', '-jar', d.jar.absolutePath] + d.args(outDir, targetJar)
+                def proc = cmd.execute()
+                proc.consumeProcessOutput(System.out, System.err)
+                proc.waitFor()
+            } catch (Exception ignored) {
+            }
+            outDir.deleteDir()
+        }
+        logger.lifecycle("")
+
+        // Benchmark
+        def totals = decompilers.collectEntries { [(it.name): 0L] }
+
+        (1..benchmarkRuns).each { run ->
+            logger.lifecycle("--- Run ${run} of ${benchmarkRuns} ---")
+            decompilers.each { d ->
+                def outDir = new File(resultsDir, "run${run}_${d.name.replaceAll('[^a-zA-Z0-9]', '_')}")
+                outDir.mkdirs()
+                def cmd = ['java', '-jar', d.jar.absolutePath] + d.args(outDir, targetJar)
+                def start = System.currentTimeMillis()
+                def proc = cmd.execute()
+                proc.consumeProcessOutput()
+                proc.waitFor()
+                def elapsed = System.currentTimeMillis() - start
+                totals[d.name] = totals[d.name] + elapsed
+                logger.lifecycle("  ${d.name.padRight(26)} ${elapsed}ms")
+                outDir.deleteDir()
+            }
+            logger.lifecycle("")
+        }
+
+        // Results
+        logger.lifecycle("--- Average over ${benchmarkRuns} runs ---")
+        def csv = new File(resultsDir, 'benchmark.csv')
+        csv.text = "decompiler,avg_ms,classes_per_sec\n"
+        decompilers.each { d ->
+            def avg = totals[d.name] / benchmarkRuns
+            def cps = avg > 0 ? (classCount * 1000 / avg) : 0
+            logger.lifecycle("  ${d.name.padRight(26)} ${avg}ms  (${cps} classes/sec)")
+            csv.append("${d.name},${avg},${cps}\n")
+        }
+        logger.lifecycle("")
+        logger.lifecycle("Results: ${csv.absolutePath}")
+    }
+}

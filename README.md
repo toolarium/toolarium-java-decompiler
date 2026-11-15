@@ -23,10 +23,13 @@ A modern, modular Java bytecode decompiler library and CLI tool. Designed API-fi
 - **Data flow analysis**: merge functions at control flow join points for accurate variable recovery
 - **Type simplification**: `java.lang.*` and same-package types shown as simple names
 - **Rich AST**: visitor-based AST with 12 expression types, 16 statement types, and 4 declaration types
-- **Flexible output**: in-memory and file-based result savers for embedding and batch use
+- **Archive output**: decompile directly into JAR, ZIP, WAR, or EAR archives
+- **Flexible output**: in-memory, file-based, and archive result savers for embedding and batch use
+- **Fastest decompiler**: 3.4x faster than Vineflower and CFR on commons-lang3 (396 classes), 7.7x faster than Procyon; see [docs/performance.md](docs/performance.md)
+- **Parallel batch decompilation**: multi-threaded class decompilation using available processors by default
 - **Comprehensive configuration**: builder-style API with 20+ options for output formatting, feature toggles, class filtering, and error handling
 - **Properties file support**: load configuration from `.properties` files for CLI and programmatic use
-- **Command-line interface**: picocli-based CLI with output directory, configuration file, help, and version options
+- **Command-line interface**: picocli-based CLI with output directory, configuration file, parallel threads, help, and version options
 
 
 ## Comparison with other decompilers
@@ -35,23 +38,24 @@ A modern, modular Java bytecode decompiler library and CLI tool. Designed API-fi
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Embeddable library API** | **Yes** | Limited | Limited | Limited | Limited |
 | **Fluent builder API** | **Yes** | No | No | No | No |
-| **Documented architecture** | **Yes** | Partial | No | No | Partial |
+| **Documented architecture** | **Yes** | <u>Partial</u> | No | No | <u>Partial</u> |
 | **Builder-style configuration** | **Yes** | Properties | Properties | Flags | Flags |
-| If/else, while, for, switch | Yes | Yes | Yes | Yes | Yes |
-| Try-catch/finally | Yes | Yes | Yes | Yes | Yes |
-| Try-with-resources | Yes | Yes | **Partial** | Yes | Yes |
-| Records, enums | Yes | Yes | Yes | Yes | Yes |
-| Lambda expressions | Yes | Yes | Yes | Yes | Yes |
-| Method references | Yes | Yes | Yes | Yes | Yes |
-| Inner class nesting | Yes | Yes | Yes | Yes | Yes |
-| Anonymous/local classes | Yes | Yes | Yes | Yes | Yes |
-| Annotations | Yes | Yes | **Partial** | Yes | Yes |
-| Generic type recovery | Yes | Yes | Yes | Yes | Yes |
-| Switch expressions | Yes | Yes | **Partial** | Yes | **Partial** |
-| Pattern matching instanceof | Yes | Yes | **Partial** | Yes | **Partial** |
-| Sealed classes, permits | Yes | Yes | **Partial** | Yes | **Partial** |
-| Text blocks | Yes | Yes | **Partial** | Yes | **Partial** |
-| Assert reconstruction | Yes | Yes | **Partial** | Yes | Yes |
+| **Parallel batch decompilation** | **Yes** | No | No | No | No |
+| If/else, while, for, switch | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Try-catch/finally | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Try-with-resources | **Yes** | **Yes** | <u>Partial</u> | **Yes** | **Yes** |
+| Records, enums | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Lambda expressions | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Method references | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Inner class nesting | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Anonymous/local classes | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Annotations | **Yes** | **Yes** | <u>Partial</u> | **Yes** | **Yes** |
+| Generic type recovery | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+| Switch expressions | **Yes** | **Yes** | <u>Partial</u> | **Yes** | <u>Partial</u> |
+| Pattern matching instanceof | **Yes** | **Yes** | <u>Partial</u> | **Yes** | <u>Partial</u> |
+| Sealed classes, permits | **Yes** | **Yes** | <u>Partial</u> | **Yes** | <u>Partial</u> |
+| Text blocks | **Yes** | **Yes** | <u>Partial</u> | **Yes** | <u>Partial</u> |
+| Assert reconstruction | **Yes** | **Yes** | <u>Partial</u> | **Yes** | **Yes** |
 
 **Key differentiator**: toolarium-java-decompiler is designed API-first for embedding in tools, IDEs, and build pipelines. While Vineflower, Fernflower, CFR, and Procyon are primarily standalone decompilers with limited integration APIs, toolarium provides clean `IDecompiler`, `IClassSource`, and `IResultSaver` interfaces, a fluent `DecompilerBuilder`, and a fully documented modular pipeline architecture.
 
@@ -94,8 +98,20 @@ java -jar toolarium-java-decompiler-0.9.0.jar -o output/ mylib.jar
 # Decompile a directory of class files
 java -jar toolarium-java-decompiler-0.9.0.jar -o output/ build/classes/
 
+# Decompile to a JAR archive
+java -jar toolarium-java-decompiler-0.9.0.jar -o output.jar mylib.jar
+
+# Decompile to a ZIP archive
+java -jar toolarium-java-decompiler-0.9.0.jar -o output.zip build/classes/
+
 # Decompile with a configuration file
 java -jar toolarium-java-decompiler-0.9.0.jar -c decompiler.properties -o output/ mylib.jar
+
+# Decompile with explicit thread count
+java -jar toolarium-java-decompiler-0.9.0.jar -t 4 -o output/ mylib.jar
+
+# Decompile sequentially (single-threaded)
+java -jar toolarium-java-decompiler-0.9.0.jar -t 1 -o output/ mylib.jar
 
 # Show help
 java -jar toolarium-java-decompiler-0.9.0.jar --help
@@ -123,10 +139,11 @@ String source = DecompilerBuilder.builder()
     .input(Path.of("MyClass.class"))
     .decompileToString();
 
-// With custom configuration
+// With custom configuration (parallel by default)
 IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
     .indentString("\t")
     .showBanner(true)
+    .parallelThreads(8)
     .build();
 DecompilerBuilder.builder()
     .input(Path.of("mylib.jar"))
@@ -212,6 +229,7 @@ The decompiler follows a modular pipeline architecture:
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design, package structure, and Vineflower comparison.
 See [docs/configuration.md](docs/configuration.md) for the full configuration option reference with examples.
 See [docs/output-comparison.md](docs/output-comparison.md) for a side-by-side output comparison with Vineflower, Fernflower, CFR, and Procyon.
+See [docs/performance.md](docs/performance.md) for performance benchmarks against Vineflower, CFR, and Procyon.
 
 
 ## Built With

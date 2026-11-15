@@ -5,8 +5,10 @@
  */
 package com.github.toolarium.java.decompiler.api;
 
+import com.github.toolarium.java.decompiler.impl.output.ArchiveResultSaver;
 import com.github.toolarium.java.decompiler.impl.output.FileResultSaver;
 import com.github.toolarium.java.decompiler.impl.output.InMemoryResultSaver;
+import java.io.IOException;
 import java.nio.file.Path;
 
 
@@ -63,5 +65,36 @@ public final class ResultSaverFactory {
      */
     public IResultSaver getFileResultSaver(Path outputDirectory) {
         return new FileResultSaver(outputDirectory);
+    }
+
+
+    /**
+     * Get an archive-based result saver that packages decompiled sources into a JAR or ZIP file.
+     * Files are collected in a temporary directory and packaged into the archive on close.
+     *
+     * @param archivePath the target archive file path (must end with .jar, .zip, .war, or .ear)
+     * @return the result saver
+     * @throws IOException if the temporary working directory cannot be created
+     */
+    public IResultSaver getArchiveResultSaver(Path archivePath) throws IOException {
+        return new ArchiveResultSaver(archivePath);
+    }
+
+
+    /**
+     * Get the appropriate result saver based on the output path.
+     * If the path has an archive extension (.jar, .zip, .war, .ear), an archive saver is returned.
+     * Otherwise, a file-based saver writing to the path as a directory is returned.
+     *
+     * @param outputPath the output path (directory or archive file)
+     * @return the result saver
+     * @throws IOException if an archive saver's temporary directory cannot be created
+     */
+    public IResultSaver getResultSaver(Path outputPath) throws IOException {
+        String fileName = outputPath.getFileName().toString();
+        if (ArchiveResultSaver.isArchiveExtension(fileName)) {
+            return new ArchiveResultSaver(outputPath);
+        }
+        return new FileResultSaver(outputPath);
     }
 }

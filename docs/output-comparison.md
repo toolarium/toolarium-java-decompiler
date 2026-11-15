@@ -52,9 +52,9 @@ public String classify(int value) {
 }
 ```
 
-**Notes:** Conditions are correct (`< 0`, `== 0`, `<= 10`). Variable names are recovered
-from the LocalVariableTable. The `else if` chain is correctly reconstructed from the
-sequential `if`/`return` bytecode pattern.
+**Notes:** Conditions match the source (`< 0`, `== 0`, `<= 10`). Variable names come from
+the LocalVariableTable. The `else if` chain is reproduced from the sequential `if`/`return`
+bytecode pattern.
 
 ### Vineflower, Fernflower, CFR, Procyon
 
@@ -92,14 +92,14 @@ public int whileLoop(int n) {
 }
 ```
 
-**Notes:** The while loop is correctly reconstructed from the bytecode pattern
-(conditional forward jump + backward GOTO). Condition direction, variable names,
-and compound assignment (`*=`) are all correct.
+**Notes:** The while loop is reproduced from the bytecode pattern (conditional forward jump
++ backward GOTO). Condition direction, variable names, and compound assignment (`*=`) match
+the source.
 
 ### Vineflower, Fernflower, CFR, Procyon
 
-All four correctly reconstruct the `while` loop with the original structure
-and compound assignment (`result *= n`).
+All four reproduce the `while` loop with the original structure and compound
+assignment (`result *= n`).
 
 
 ## 3. Switch Statement (int)
@@ -142,9 +142,9 @@ public String dayType(int day) {
 }
 ```
 
-**Notes:** The switch structure is now correctly reconstructed from the `tableswitch`
-bytecode instruction. Case values that share the same target are grouped together.
-Variable names are recovered from the LVT.
+**Notes:** The switch structure is produced from the `tableswitch` bytecode instruction.
+Case values that share the same target are grouped together. Variable names come from
+the LVT.
 
 ### Vineflower, Fernflower, CFR, Procyon
 
@@ -197,8 +197,8 @@ public int calculate(String op, int a, int b) {
 ```
 
 **Notes:** The two-phase String switch pattern (`hashCode()` lookup and `equals()` dispatch)
-is correctly merged back into a single `switch(op)` with String case values. Variable names
-recovered from LVT. String concatenation in the exception message is correctly reconstructed.
+is merged into a single `switch(op)` with String case values. Variable names come from the
+LVT. String concatenation in the exception message is preserved.
 
 ### Vineflower, CFR
 
@@ -255,16 +255,15 @@ public void increment() {
 }
 ```
 
-**Notes:** Condition direction is correct (`< 1024`). Boolean constant `true` is correctly
-recovered from the integer value stored in bytecode. Increment `count++` is reconstructed
-from the compound assignment pattern. Remaining issues: constant name `MAX_SIZE` is replaced
-by the inlined value `1024` in the method body (javac inlines compile-time constants).
-Field access uses explicit `this.` prefix.
+**Notes:** The constant name `MAX_SIZE` is replaced by the inlined value `1024` in the method
+body (javac inlines compile-time constants). Field access uses an explicit `this.` prefix.
+Boolean constant `true` is recovered from the integer value stored in bytecode. Increment
+`count++` is reconstructed from the compound assignment pattern.
 
 ### Vineflower, Fernflower, CFR, Procyon
 
-All four correctly recover `true` for the boolean field, use the constant name in expressions
-where the compiler inlined it, and preserve the original condition direction.
+All four recover `true` for the boolean field, use the constant name in expressions where
+the compiler inlined it, and preserve the original condition direction.
 
 
 ## 6. Arithmetic and Bitwise Expressions
@@ -294,7 +293,7 @@ public int arithmetic(int a, int b) {
 ```
 
 **Result:** Correct! All arithmetic operations, shifts, and operator precedence are preserved.
-Variable names are now recovered from the LVT (`a`, `b`, `sum`, `product`, `shifted`).
+Variable names are recovered from the LVT (`a`, `b`, `sum`, `product`, `shifted`).
 Parentheses are only emitted where needed for correct precedence.
 
 ### Vineflower, Fernflower, CFR, Procyon
@@ -346,14 +345,14 @@ public enum EnumExample {
 ```
 
 **Notes:** The `enum` keyword, constant declarations, and constructor arguments are
-correctly reconstructed. The `isWarm()` method is simplified from `if/return true/false`
-to `return cond`. Synthetic methods (`values()`, `valueOf()`, `$VALUES`, `<clinit>`) and
-the constructor are correctly hidden.
+reproduced. The `isWarm()` method is simplified from `if/return true/false` to
+`return cond`. Synthetic methods (`values()`, `valueOf()`, `$VALUES`, `<clinit>`) and
+the constructor are hidden.
 
 ### Vineflower, Fernflower, CFR, Procyon
 
 All four reconstruct the `enum` keyword, constant declarations with constructor arguments,
-and hide the synthetic parameters. Vineflower and CFR also correctly simplify `isWarm()`.
+and hide the synthetic parameters. Vineflower and CFR also simplify `isWarm()`.
 
 
 ## 8. Assert Statements
@@ -391,14 +390,14 @@ public void process(String input) {
 }
 ```
 
-**Notes:** Assert statements are correctly reconstructed from the bytecode pattern. The
-`$assertionsDisabled` field is removed, and the inner condition is negated to express the
-positive invariant (e.g., `b != 0` instead of the bytecode's trigger condition `b == 0`).
-`java.lang.System` is simplified to `System`. Variable names recovered from LVT.
+**Notes:** Assert statements are reconstructed from the `$assertionsDisabled` bytecode
+pattern. The inner condition is negated to express the positive invariant (e.g., `b != 0`
+instead of the bytecode's trigger condition `b == 0`). `java.lang.System` is simplified to
+`System`. Variable names come from the LVT.
 
 ### Vineflower, CFR, Procyon
 
-All three correctly reconstruct `assert` statements from the bytecode pattern.
+All three reconstruct `assert` statements from the bytecode pattern.
 
 ### Fernflower
 
@@ -425,14 +424,13 @@ public String concatenation(String first, String last, int age) {
 }
 ```
 
-**Notes:** String concatenation is now correctly reconstructed from the
-`makeConcatWithConstants` recipe template. All literal separators (`" "`, `" (age: "`, `")"`)
-are preserved. Variable names recovered from LVT. Parentheses are only emitted where needed
-for correct operator precedence.
+**Notes:** String concatenation is reconstructed from the `makeConcatWithConstants` recipe
+template. All literal separators (`" "`, `" (age: "`, `")"`) are preserved. Variable names
+come from the LVT. Parentheses are emitted where needed for operator precedence.
 
 ### Vineflower, Fernflower, CFR, Procyon
 
-All four correctly reconstruct the full concatenation expression with all string literals.
+All four reconstruct the full concatenation expression with all string literals.
 
 
 ## 10. Try-with-resources
@@ -459,13 +457,13 @@ public String readFirstLine(String path) throws IOException {
 }
 ```
 
-**Notes:** The try-with-resources pattern is correctly reconstructed from the compiler-generated
-close()/addSuppressed() exception handling code. The resource declaration is moved into the
-try parentheses, and the synthetic finally block and Throwable catch clause are removed.
+**Notes:** The try-with-resources pattern is reconstructed from the compiler-generated
+`close()`/`addSuppressed()` exception handling code. The resource declaration is moved into
+the try parentheses, and the synthetic finally block and Throwable catch clause are removed.
 
 ### Vineflower, CFR, Procyon
 
-All three correctly reconstruct the `try`-with-resources syntax.
+All three reconstruct the `try`-with-resources syntax.
 
 ### Fernflower
 
@@ -499,14 +497,14 @@ public void processItems(List<String> items) {
 }
 ```
 
-**Notes:** Lambda expressions are fully reconstructed from `invokedynamic`/`LambdaMetafactory`
+**Notes:** Lambda expressions are reconstructed from `invokedynamic`/`LambdaMetafactory`
 bootstrap patterns. The compiler-generated `lambda$` method body is inlined into the lambda
-expression, producing clean `(args) -> expr` syntax. Parameter names are recovered from the
-implementation method's debug info when available.
+expression, producing `(args) -> expr` syntax. Parameter names come from the implementation
+method's debug info when available.
 
 ### Vineflower, CFR
 
-Both fully reconstruct lambda bodies by inlining the generated `lambda$` method.
+Both reconstruct lambda bodies by inlining the generated `lambda$` method.
 
 ### Fernflower, Procyon
 
@@ -538,14 +536,14 @@ public void methodReferences(List<String> items) {
 }
 ```
 
-**Notes:** Method references are reconstructed as proper `Owner::method` expressions from
-the `invokedynamic` bootstrap. Instance method references on captured receivers
-(e.g., `System.out::println`) correctly emit the qualifier. Constructor references use the
-`::new` syntax. Static and unbound instance references use the class name.
+**Notes:** Method references are reconstructed as `Owner::method` expressions from the
+`invokedynamic` bootstrap. Instance method references on captured receivers (e.g.,
+`System.out::println`) include the qualifier. Constructor references use `::new` syntax.
+Static and unbound instance references use the class name.
 
 ### Vineflower, CFR
 
-Both correctly reconstruct all method reference forms including constructor references.
+Both reconstruct all method reference forms including constructor references.
 
 ### Fernflower, Procyon
 
@@ -593,13 +591,13 @@ public void iterateWithMethod(Iterator iter) {
 }
 ```
 
-**Notes:** For-loop detection now handles compound assignment updates (`i += 2`), method call
+**Notes:** For-loop detection covers compound assignment updates (`i += 2`), method call
 updates (`iter.next()`), and assignment updates. The while-to-for conversion recognizes
 these patterns from the last statement of the loop body when preceded by a valid initializer.
 
 ### Vineflower, CFR
 
-Both correctly reconstruct complex for-loop patterns.
+Both reconstruct complex for-loop patterns.
 
 ### Fernflower, Procyon
 
@@ -646,8 +644,7 @@ public String classify(int mode) {
 ```
 
 **Notes:** The variable-assignment switch pattern is detected and converted to a switch
-expression with arrow syntax. Each case is emitted as `case X -> expr;` instead of the
-fall-through `case X: result = expr; break;` form. The default case uses `default -> expr;`.
+expression with arrow syntax. Each case is emitted as `case X -> expr;`. The default case uses `default -> expr;`.
 
 ### Vineflower, CFR
 
@@ -749,15 +746,14 @@ public class GenericExample {
 }
 ```
 
-**Notes:** Generic types are recovered from the JVM Signature attribute attached to classes,
-fields, and methods. Parameterized types (`List<String>`), nested generics
-(`Map<String, List<Integer>>`), type variables (`T`), and bounded type parameters
-(`T extends Comparable<T>`) are all reconstructed. Wildcards (`? extends`, `? super`) are
-also supported.
+**Notes:** Generic types come from the JVM Signature attribute attached to classes, fields,
+and methods. The output includes parameterized types (`List<String>`), nested generics
+(`Map<String, List<Integer>>`), type variables (`T`), bounded type parameters
+(`T extends Comparable<T>`), and wildcards (`? extends`, `? super`).
 
 ### Vineflower, CFR
 
-Both fully recover generic type information from signatures.
+Both recover generic type information from signatures.
 
 ### Fernflower, Procyon
 
@@ -806,14 +802,15 @@ public class AnnotatedExample {
 }
 ```
 
-**Notes:** Annotations are reconstructed from RuntimeVisibleAnnotations, RuntimeInvisibleAnnotations,
-RuntimeVisibleParameterAnnotations, and RuntimeInvisibleParameterAnnotations attributes. Annotation
-element values (strings, enums, arrays, nested annotations) are correctly emitted. Type names are
-simplified following the same rules as other types.
+**Notes:** Annotations are reconstructed from RuntimeVisibleAnnotations,
+RuntimeInvisibleAnnotations, RuntimeVisibleParameterAnnotations, and
+RuntimeInvisibleParameterAnnotations attributes. Annotation element values (strings, enums,
+arrays, nested annotations) are included. Type names are simplified following the same rules
+as other types.
 
 ### Vineflower, CFR
 
-Both fully reconstruct annotations including parameter annotations with element values.
+Both reconstruct annotations including parameter annotations with element values.
 
 ### Fernflower, Procyon
 
@@ -866,15 +863,15 @@ public enum Planet {
 }
 ```
 
-**Notes:** The enum constructor's user-defined parameters are extracted from the `<init>` descriptor,
-skipping the compiler-inserted `(String name, int ordinal)` prefix. Constant arguments from the
-static initializer are correctly shown in the enum constant declarations. The constructor itself is
-hidden since its only purpose is field assignment. Synthetic members (`$VALUES`, `values()`,
-`valueOf()`) are removed.
+**Notes:** The enum constructor's user-defined parameters are extracted from the `<init>`
+descriptor, skipping the compiler-inserted `(String name, int ordinal)` prefix. Constant
+arguments from the static initializer appear in the enum constant declarations. The
+constructor is hidden since its only purpose is field assignment. Synthetic members
+(`$VALUES`, `values()`, `valueOf()`) are removed.
 
 ### Vineflower, CFR
 
-Both fully reconstruct enum constructors with custom parameters.
+Both reconstruct enum constructors with custom parameters.
 
 ### Fernflower, Procyon
 
@@ -929,15 +926,15 @@ public class Outer {
 }
 ```
 
-**Notes:** When decompiling via `decompileAll()` (JAR or directory mode), inner classes are identified
-from the InnerClasses attribute and nested inside their enclosing class. The inner class is renamed
-to its simple name (stripping the `Outer$` prefix). Synthetic `this$0` fields referencing the
-outer instance are removed. Only named inner classes are nested; anonymous and local classes
-remain as separate top-level output.
+**Notes:** When decompiling via `decompileAll()` (JAR or directory mode), inner classes are
+read from the InnerClasses attribute and nested inside their enclosing class. The inner class
+uses its simple name (stripping the `Outer$` prefix). Synthetic `this$0` fields referencing
+the outer instance are removed. Only named inner classes are nested; anonymous and local
+classes remain as separate top-level output.
 
 ### Vineflower, CFR
 
-Both fully reconstruct inner class nesting, including anonymous and local classes.
+Both reconstruct inner class nesting, including anonymous and local classes.
 
 ### Fernflower, Procyon
 
@@ -1106,30 +1103,24 @@ Fernflower emits the string with `\n` escapes. Procyon has partial text block su
 | Compound assignment | Correct | Correct | Correct | Correct | Correct |
 | Enum reconstruction | Correct | Correct | Correct | Correct | Correct |
 | Increment/decrement | Correct | Correct | Correct | Correct | Correct |
-| Assert reconstruction | Correct | Correct | **Partial** | Correct | Correct |
+| Assert reconstruction | Correct | Correct | <u>Partial</u> | Correct | Correct |
 | Boolean simplification | Correct | Correct | Correct | Correct | Correct |
 | String concatenation | Correct | Correct | Correct | Correct | Correct |
 | Variable names (LVT) | Applied | Applied | Applied | Applied | Applied |
 | Try-catch/finally | Correct | Correct | Correct | Correct | Correct |
-| Try-with-resources | Correct | Correct | **Partial** | Correct | Correct |
+| Try-with-resources | Correct | Correct | <u>Partial</u> | Correct | Correct |
 | Type simplification | Correct | Correct | Correct | Correct | Correct |
 | Lambda expressions | Correct | Correct | Correct | Correct | Correct |
 | Method references | Correct | Correct | Correct | Correct | Correct |
-| For-loop edge cases | Correct | Correct | **Partial** | Correct | Correct |
-| Switch expressions | Correct | Correct | **Partial** | Correct | **Partial** |
-| Pattern instanceof | Correct | Correct | **Partial** | Correct | **Partial** |
+| For-loop edge cases | Correct | Correct | <u>Partial</u> | Correct | Correct |
+| Switch expressions | Correct | Correct | <u>Partial</u> | Correct | <u>Partial</u> |
+| Pattern instanceof | Correct | Correct | <u>Partial</u> | Correct | <u>Partial</u> |
 | Generic types | Correct | Correct | Correct | Correct | Correct |
-| Annotations | Correct | Correct | **Partial** | Correct | Correct |
-| Enhanced enum ctors | Correct | Correct | Correct | Correct | **Partial** |
+| Annotations | Correct | Correct | <u>Partial</u> | Correct | Correct |
+| Enhanced enum ctors | Correct | Correct | Correct | Correct | <u>Partial</u> |
 | Inner class nesting | Correct | Correct | Correct | Correct | Correct |
 | Anonymous/local classes | Correct | Correct | Correct | Correct | Correct |
-| Sealed class support | Correct | Correct | **Partial** | Correct | **Partial** |
-| Text blocks | Correct | Correct | **Partial** | Correct | **Partial** |
+| Sealed class support | Correct | Correct | <u>Partial</u> | Correct | <u>Partial</u> |
+| Text blocks | Correct | Correct | <u>Partial</u> | Correct | <u>Partial</u> |
+| Parallel batch decompilation | **Yes** | No | No | No | No |
 
-
-## Roadmap
-
-The toolarium-java-decompiler is an actively developed library. The comparison above reflects
-the current state.
-
-Future releases will continue to expand decompilation coverage for modern Java features.

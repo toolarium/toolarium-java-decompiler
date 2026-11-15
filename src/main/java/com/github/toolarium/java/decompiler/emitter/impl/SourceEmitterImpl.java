@@ -70,11 +70,14 @@ public class SourceEmitterImpl implements ISourceEmitter, IAstVisitor {
     private static final String DOT = ".";
     private static final String EQUALS_SPACED = " = ";
     private static final int MAX_COLLECT_DEPTH = 500;
+    private static final int MAX_EMISSION_DEPTH = 500;
     private final String indent;
     private final String lineSeparator;
     private final StringBuilder buffer;
     private final java.util.Set<String> importedTypes;
+    private String[] indentCache;
     private int indentLevel;
+    private int emissionDepth;
     private String currentPackage;
 
 
@@ -88,8 +91,10 @@ public class SourceEmitterImpl implements ISourceEmitter, IAstVisitor {
         this.indent = Objects.requireNonNull(indent);
         this.lineSeparator = Objects.requireNonNull(lineSeparator);
         this.buffer = new StringBuilder();
-        this.importedTypes = new java.util.TreeSet<>();
+        this.importedTypes = new java.util.HashSet<>();
+        this.indentCache = buildIndentCache(indent, 32);
         this.indentLevel = 0;
+        this.emissionDepth = 0;
         this.currentPackage = null;
     }
 
@@ -157,9 +162,11 @@ public class SourceEmitterImpl implements ISourceEmitter, IAstVisitor {
             buffer.append(lineSeparator);
         }
 
-        // Emit import statements (skip java.lang and same-package)
+        // Emit import statements (skip java.lang and same-package), sorted for deterministic output
+        List<String> sortedImports = new ArrayList<>(importedTypes);
+        java.util.Collections.sort(sortedImports);
         boolean hasImports = false;
-        for (String importType : importedTypes) {
+        for (String importType : sortedImports) {
             if (!importType.startsWith(JAVA_LANG_PREFIX)
                     && (currentPackage == null || !importType.startsWith(currentPackage + DOT))) {
                 buffer.append("import ").append(importType).append(';').append(lineSeparator);
@@ -689,9 +696,17 @@ public class SourceEmitterImpl implements ISourceEmitter, IAstVisitor {
      */
     @Override
     public void visitBlockStatement(IBlockStatement statement) {
+        emissionDepth++;
+        if (emissionDepth > MAX_EMISSION_DEPTH) {
+            emitIndent();
+            buffer.append("// emission depth limit reached").append(lineSeparator);
+            emissionDepth--;
+            return;
+        }
         for (IStatement stmt : statement.getStatements()) {
             stmt.accept(this);
         }
+        emissionDepth--;
     }
 
 
@@ -1913,9 +1928,32 @@ public class SourceEmitterImpl implements ISourceEmitter, IAstVisitor {
      * Emit the current indentation.
      */
     private void emitIndent() {
-        for (int i = 0; i < indentLevel; i++) {
-            buffer.append(indent);
+        if (indentLevel < indentCache.length) {
+            buffer.append(indentCache[indentLevel]);
+        } else {
+            if (indentLevel >= indentCache.length) {
+                indentCache = buildIndentCache(indent, indentLevel + 16);
+            }
+            buffer.append(indentCache[indentLevel]);
         }
+    }
+
+
+    /**
+     * Build a cache of pre-computed indent strings for each depth level.
+     *
+     * @param indentStr the single-level indent string
+     * @param size      the number of levels to cache
+     * @return the indent cache array
+     */
+    private static String[] buildIndentCache(String indentStr, int size) {
+        String[] cache = new String[size];
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < size; i++) {
+            cache[i] = sb.toString();
+            sb.append(indentStr);
+        }
+        return cache;
     }
 
 
@@ -1958,6 +1996,18 @@ public class SourceEmitterImpl implements ISourceEmitter, IAstVisitor {
      * @return the escaped string
      */
     private String escapeString(String str) {
+        boolean needsEscape = false;
+        for (int i = 0; i < str.length(); i++) {
+            char ch = str.charAt(i);
+            if (ch == '\\' || ch == '"' || ch == '\'' || ch < 0x20) {
+                needsEscape = true;
+                break;
+            }
+        }
+        if (!needsEscape) {
+            return str;
+        }
+
         StringBuilder sb = new StringBuilder(str.length());
         for (int i = 0; i < str.length(); i++) {
             char ch = str.charAt(i);

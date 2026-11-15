@@ -110,12 +110,34 @@ public class AsmClassReaderImpl implements IClassReader {
      */
     @Override
     public IStructClass readClass(InputStream inputStream) throws IOException {
-        byte[] classBytes = inputStream.readAllBytes();
-        if (classBytes.length > MAX_CLASS_FILE_SIZE) {
-            throw new IOException("Class file exceeds maximum allowed size of "
-                    + MAX_CLASS_FILE_SIZE + " bytes: " + classBytes.length);
-        }
+        byte[] classBytes = readBounded(inputStream, MAX_CLASS_FILE_SIZE);
         return readClass(classBytes);
+    }
+
+
+    /**
+     * Read up to maxSize bytes from the input stream, throwing if the limit is exceeded.
+     * This avoids loading an unbounded stream into memory before checking the size.
+     *
+     * @param inputStream the input stream
+     * @param maxSize     the maximum allowed byte count
+     * @return the bytes read
+     * @throws IOException if reading fails or the size limit is exceeded
+     */
+    private byte[] readBounded(InputStream inputStream, int maxSize) throws IOException {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = inputStream.read(chunk)) != -1) {
+            totalRead += bytesRead;
+            if (totalRead > maxSize) {
+                throw new IOException("Class file exceeds maximum allowed size of "
+                        + maxSize + " bytes.");
+            }
+            buffer.write(chunk, 0, bytesRead);
+        }
+        return buffer.toByteArray();
     }
 
 

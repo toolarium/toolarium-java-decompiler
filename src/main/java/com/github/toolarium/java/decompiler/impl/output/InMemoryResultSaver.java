@@ -27,6 +27,7 @@ public class InMemoryResultSaver implements IResultSaver {
     private static final Logger LOG = LoggerFactory.getLogger(InMemoryResultSaver.class);
 
     private static final int DEFAULT_MAX_ENTRIES = 10_000;
+    private static final int HARD_MAX_ENTRIES = 100_000;
 
     private final Map<String, String> results = Collections.synchronizedMap(new LinkedHashMap<>());
     private final AtomicBoolean warned = new AtomicBoolean(false);
@@ -49,6 +50,13 @@ public class InMemoryResultSaver implements IResultSaver {
      */
     @Override
     public void saveSource(String className, String sourceCode) {
+        if (results.size() >= HARD_MAX_ENTRIES) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("In-memory result count reached hard limit of " + HARD_MAX_ENTRIES + ", dropping entry for: " + className);
+            }
+            return;
+        }
+
         results.put(className, sourceCode);
 
         if (results.size() > DEFAULT_MAX_ENTRIES && warned.compareAndSet(false, true)) {

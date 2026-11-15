@@ -10,8 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.github.toolarium.java.decompiler.api.DecompilerConfigurationBuilder;
 import com.github.toolarium.java.decompiler.api.DecompilerFactory;
 import com.github.toolarium.java.decompiler.api.IDecompiler;
+import com.github.toolarium.java.decompiler.api.IDecompilerConfiguration;
 import com.github.toolarium.java.decompiler.api.IResultSaver;
 import com.github.toolarium.java.decompiler.api.ResultSaverFactory;
 import com.github.toolarium.java.decompiler.impl.output.InMemoryResultSaver;
@@ -201,6 +203,66 @@ public class DecompilerImplTest {
         DecompilerFactory factory2 = DecompilerFactory.getInstance();
         assertNotNull(factory1);
         assertEquals(factory1, factory2);
+    }
+
+
+    /**
+     * Test parallel decompileAll with multiple threads using InMemoryResultSaver.
+     *
+     * @param tempDir the temp directory
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testParallelDecompileAll(@TempDir Path tempDir) throws Exception {
+        Path inputDir = tempDir.resolve("parallel");
+        Files.createDirectories(inputDir);
+
+        writeClassToDir(inputDir, JAVA_LANG_RUNNABLE);
+        writeClassToDir(inputDir, "java/lang/Comparable");
+        writeClassToDir(inputDir, JAVA_LANG_INTEGER);
+
+        IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
+                .parallelThreads(4)
+                .build();
+        IDecompiler parallelDecompiler = DecompilerFactory.getInstance().getDecompiler(config);
+
+        try (IClassSource source = ClassSourceFactory.getInstance().getDirectoryClassSource(inputDir)) {
+            InMemoryResultSaver saver = new InMemoryResultSaver();
+            parallelDecompiler.decompileAll(source, saver);
+
+            assertEquals(3, saver.getSavedCount());
+            assertTrue(saver.getResults().containsKey(JAVA_LANG_RUNNABLE));
+            assertTrue(saver.getResults().containsKey("java/lang/Comparable"));
+            assertTrue(saver.getResults().containsKey(JAVA_LANG_INTEGER));
+            assertFalse(saver.getResults().get(JAVA_LANG_INTEGER).isEmpty());
+        }
+    }
+
+
+    /**
+     * Test parallel decompilation with a single class still works.
+     *
+     * @param tempDir the temp directory
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testParallelDecompileSingleClass(@TempDir Path tempDir) throws Exception {
+        Path inputDir = tempDir.resolve("parallelSingle");
+        Files.createDirectories(inputDir);
+        writeClassToDir(inputDir, JAVA_LANG_RUNNABLE);
+
+        IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
+                .parallelThreads(2)
+                .build();
+        IDecompiler parallelDecompiler = DecompilerFactory.getInstance().getDecompiler(config);
+
+        try (IClassSource source = ClassSourceFactory.getInstance().getDirectoryClassSource(inputDir)) {
+            InMemoryResultSaver saver = new InMemoryResultSaver();
+            parallelDecompiler.decompileAll(source, saver);
+
+            assertEquals(1, saver.getSavedCount());
+            assertTrue(saver.getResults().containsKey(JAVA_LANG_RUNNABLE));
+        }
     }
 
 

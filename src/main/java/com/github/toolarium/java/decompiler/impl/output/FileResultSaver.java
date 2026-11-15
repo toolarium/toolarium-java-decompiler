@@ -70,6 +70,15 @@ public class FileResultSaver implements IResultSaver {
             Files.createDirectories(parentDir);
         }
 
+        // Re-validate after directory creation to guard against symlink races
+        if (parentDir != null && Files.exists(parentDir)) {
+            Path realBase = outputDirectory.toRealPath();
+            Path realParent = parentDir.toRealPath();
+            if (!realParent.startsWith(realBase)) {
+                throw new IOException("Resolved output path escapes output directory after symlink resolution: " + className);
+            }
+        }
+
         Files.write(outputFile, sourceCode.getBytes(StandardCharsets.UTF_8));
         savedCount.incrementAndGet();
 

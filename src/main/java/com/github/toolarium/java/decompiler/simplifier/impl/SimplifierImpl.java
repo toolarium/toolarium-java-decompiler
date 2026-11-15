@@ -100,7 +100,14 @@ public class SimplifierImpl implements ISimplifier {
      * @return the simplified statements
      */
     private List<IStatement> simplifyStatements(List<IStatement> statements, int depth) {
+        if (depth >= MAX_SIMPLIFICATION_DEPTH) {
+            return statements;
+        }
+
         List<IStatement> result = new ArrayList<>();
+        boolean hasWhile = false;
+        boolean hasIf = false;
+        boolean hasSwitch = false;
 
         for (IStatement stmt : statements) {
             IStatement simplified = simplifyStatement(stmt, depth);
@@ -113,23 +120,28 @@ public class SimplifierImpl implements ISimplifier {
                 }
             }
 
+            if (simplified instanceof IWhileStatement) {
+                hasWhile = true;
+            } else if (simplified instanceof IIfStatement) {
+                hasIf = true;
+            } else if (simplified instanceof ISwitchStatement) {
+                hasSwitch = true;
+            }
+
             result.add(simplified);
         }
 
-        // Post-pass: detect for-each patterns (Iterator var = x.iterator(); while(var.hasNext()) {...})
-        result = detectForEachLoops(result);
-
-        // Post-pass: detect for-loop patterns (init; while(cond) { body; update; })
-        result = detectForLoops(result);
-
-        // Post-pass: detect else-if chains from consecutive if/return patterns
-        result = detectElseIfChains(result);
-
-        // Post-pass: detect pattern matching instanceof (instanceof + cast -> instanceof pattern)
-        result = detectPatternInstanceof(result);
-
-        // Post-pass: detect switch expressions (var decl + switch assigning to same var)
-        result = detectSwitchExpressions(result);
+        if (hasWhile) {
+            result = detectForEachLoops(result);
+            result = detectForLoops(result);
+        }
+        if (hasIf) {
+            result = detectElseIfChains(result);
+            result = detectPatternInstanceof(result);
+        }
+        if (hasSwitch) {
+            result = detectSwitchExpressions(result);
+        }
 
         return result;
     }

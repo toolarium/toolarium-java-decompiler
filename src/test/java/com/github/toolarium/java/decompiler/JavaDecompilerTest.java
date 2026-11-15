@@ -13,8 +13,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +29,9 @@ import org.junit.jupiter.api.io.TempDir;
  * @author patrick
  */
 public class JavaDecompilerTest {
+    private static final String RUNNABLE_CLASS = "java/lang/Runnable";
+    private static final String OUTPUT_OPTION = "-o";
+
 
     /**
      * Test help output.
@@ -65,7 +72,7 @@ public class JavaDecompilerTest {
      */
     @Test
     void testDecompileSingleFileToConsole(@TempDir Path tempDir) throws Exception {
-        Path classFile = writeClassFile(tempDir, "java/lang/Runnable");
+        Path classFile = writeClassFile(tempDir, RUNNABLE_CLASS);
         JavaDecompiler.main(new String[]{classFile.toString()});
         // Should not throw
     }
@@ -79,11 +86,11 @@ public class JavaDecompilerTest {
      */
     @Test
     void testDecompileSingleFileToDir(@TempDir Path tempDir) throws Exception {
-        Path classFile = writeClassFile(tempDir, "java/lang/Runnable");
+        Path classFile = writeClassFile(tempDir, RUNNABLE_CLASS);
         Path outputDir = tempDir.resolve("output");
         Files.createDirectories(outputDir);
 
-        JavaDecompiler.main(new String[]{"-o", outputDir.toString(), classFile.toString()});
+        JavaDecompiler.main(new String[]{OUTPUT_OPTION, outputDir.toString(), classFile.toString()});
 
         Path outputFile = outputDir.resolve("Runnable.java");
         assertTrue(Files.exists(outputFile));
@@ -99,13 +106,13 @@ public class JavaDecompilerTest {
     @Test
     void testDecompileDirectory(@TempDir Path tempDir) throws Exception {
         Path inputDir = tempDir.resolve("classes");
-        writeClassFile(inputDir, "java/lang/Runnable");
+        writeClassFile(inputDir, RUNNABLE_CLASS);
         writeClassFile(inputDir, "java/lang/Comparable");
 
         Path outputDir = tempDir.resolve("output");
         Files.createDirectories(outputDir);
 
-        JavaDecompiler.main(new String[]{"-o", outputDir.toString(), inputDir.toString()});
+        JavaDecompiler.main(new String[]{OUTPUT_OPTION, outputDir.toString(), inputDir.toString()});
 
         assertTrue(Files.exists(outputDir.resolve("java/lang/Runnable.java")));
         assertTrue(Files.exists(outputDir.resolve("java/lang/Comparable.java")));
@@ -124,7 +131,7 @@ public class JavaDecompilerTest {
         Path outputDir = tempDir.resolve("output");
         Files.createDirectories(outputDir);
 
-        JavaDecompiler.main(new String[]{"-o", outputDir.toString(), jarFile.toString()});
+        JavaDecompiler.main(new String[]{OUTPUT_OPTION, outputDir.toString(), jarFile.toString()});
 
         assertTrue(Files.exists(outputDir.resolve("java/lang/Runnable.java")));
     }
@@ -137,6 +144,74 @@ public class JavaDecompilerTest {
     void testNonexistentInput() {
         JavaDecompiler.main(new String[]{"nonexistent.class"});
         // Should print error but not throw
+    }
+
+
+    /**
+     * Test decompile a single class file to a JAR archive output.
+     *
+     * @param tempDir the temp directory
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testDecompileSingleFileToJar(@TempDir Path tempDir) throws Exception {
+        Path classFile = writeClassFile(tempDir, RUNNABLE_CLASS);
+        Path outputJar = tempDir.resolve("output.jar");
+
+        JavaDecompiler.main(new String[]{OUTPUT_OPTION, outputJar.toString(), classFile.toString()});
+
+        assertTrue(Files.exists(outputJar));
+        try (ZipFile zipFile = new ZipFile(outputJar.toFile())) {
+            ZipEntry manifest = zipFile.getEntry("META-INF/MANIFEST.MF");
+            assertNotNull(manifest, "JAR should contain a manifest");
+            assertNotNull(zipFile.getEntry("Runnable.java"), "JAR should contain Runnable.java");
+        }
+    }
+
+
+    /**
+     * Test decompile a JAR input to a ZIP archive output.
+     *
+     * @param tempDir the temp directory
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testDecompileJarToZip(@TempDir Path tempDir) throws Exception {
+        Path jarFile = createTestJar(tempDir);
+        Path outputZip = tempDir.resolve("output.zip");
+
+        JavaDecompiler.main(new String[]{OUTPUT_OPTION, outputZip.toString(), jarFile.toString()});
+
+        assertTrue(Files.exists(outputZip));
+        try (ZipFile zipFile = new ZipFile(outputZip.toFile())) {
+            List<String> entryNames = new ArrayList<>();
+            zipFile.entries().asIterator().forEachRemaining(entry -> entryNames.add(entry.getName()));
+            assertTrue(entryNames.contains("java/lang/Runnable.java"),
+                    "ZIP should contain java/lang/Runnable.java");
+        }
+    }
+
+
+    /**
+     * Test decompile a directory to a WAR archive output.
+     *
+     * @param tempDir the temp directory
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testDecompileDirectoryToWar(@TempDir Path tempDir) throws Exception {
+        Path inputDir = tempDir.resolve("classes");
+        writeClassFile(inputDir, RUNNABLE_CLASS);
+
+        Path outputWar = tempDir.resolve("output.war");
+
+        JavaDecompiler.main(new String[]{OUTPUT_OPTION, outputWar.toString(), inputDir.toString()});
+
+        assertTrue(Files.exists(outputWar));
+        try (ZipFile zipFile = new ZipFile(outputWar.toFile())) {
+            ZipEntry manifest = zipFile.getEntry("META-INF/MANIFEST.MF");
+            assertNotNull(manifest, "WAR should contain a manifest");
+        }
     }
 
 
@@ -176,7 +251,7 @@ public class JavaDecompilerTest {
      */
     private Path createTestJar(Path tempDir) throws Exception {
         Path jarFile = tempDir.resolve("test.jar");
-        byte[] classBytes = loadClassBytes("java/lang/Runnable");
+        byte[] classBytes = loadClassBytes(RUNNABLE_CLASS);
 
         try (OutputStream fos = Files.newOutputStream(jarFile);
              JarOutputStream jos = new JarOutputStream(fos)) {

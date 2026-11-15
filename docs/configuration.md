@@ -13,6 +13,7 @@ IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
     .showBanner(true)
     .removeSyntheticMembers(false)
     .includeClassRegex("com\\.example\\..*")
+    .parallelThreads(4)
     .build();
 
 // Use with DecompilerBuilder
@@ -59,16 +60,26 @@ show.override.annotation = false
 include.class.regex = com\\.example\\..*
 exclude.class.regex = .*\\$\\d+
 
+# Performance
+parallel.threads = 4
+
 # Error handling
 ignore.invalid.bytecode = false
 max.method.time.seconds = 0
 ```
 
 
-### CLI usage with properties file
+### CLI usage
 
 ```bash
+# With a properties file
 java -jar toolarium-java-decompiler.jar -c decompiler.properties -o output/ mylib.jar
+
+# With explicit thread count (overrides properties and default)
+java -jar toolarium-java-decompiler.jar -t 4 -o output/ mylib.jar
+
+# Sequential decompilation
+java -jar toolarium-java-decompiler.jar -t 1 -o output/ mylib.jar
 ```
 
 
@@ -131,6 +142,17 @@ IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
 Regex patterns are matched against the dot-separated fully qualified class name (e.g., `com.example.MyClass`).
 Include is checked first: if set, only matching classes are decompiled. Exclude is then applied to
 further narrow the set. Both patterns use standard Java regex syntax.
+
+
+### Performance
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `parallel.threads` | int | available processors | Number of threads for parallel batch decompilation. 0 or 1 = sequential. |
+
+Batch decompilation (`decompileAll`) uses parallel class decompilation by default, with a thread
+pool sized to the number of available processors. Each class is decompiled independently, and
+results are collected in the original order. Set to 1 for sequential processing.
 
 
 ### Error handling

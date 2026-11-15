@@ -207,4 +207,15 @@ public interface IDecompilerConfiguration {
      * @return the maximum method decompilation time in seconds (default: 0)
      */
     int getMaxMethodTimeSeconds();
+
+
+    /**
+     * Get the number of threads to use for parallel batch decompilation.
+     * A value of 0 or 1 means sequential processing (single-threaded).
+     * A value greater than 1 specifies the thread pool size for parallel class decompilation
+     * during {@link com.github.toolarium.java.decompiler.api.IDecompiler#decompileAll}.
+     *
+     * @return the number of parallel threads (default: available processors)
+     */
+    int getParallelThreads();
 }

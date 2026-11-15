@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -54,6 +55,7 @@ public class DecompilerConfigurationBuilderTest {
         assertNull(config.getExcludeClassRegex());
         assertFalse(config.isIgnoreInvalidBytecode());
         assertEquals(0, config.getMaxMethodTimeSeconds());
+        assertTrue(config.getParallelThreads() > 0);
     }
 
 
@@ -212,6 +214,98 @@ public class DecompilerConfigurationBuilderTest {
     void testFactoryWithConfiguration() {
         IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
                 .indentString("\t")
+                .build();
+
+        IDecompiler decompiler = DecompilerFactory.getInstance().getDecompiler(config);
+        assertNotNull(decompiler);
+    }
+
+
+    /**
+     * Test that null indentString is rejected.
+     */
+    @Test
+    void testNullIndentStringRejected() {
+        assertThrows(NullPointerException.class, () ->
+                DecompilerConfigurationBuilder.builder().indentString(null));
+    }
+
+
+    /**
+     * Test that null lineSeparator is rejected.
+     */
+    @Test
+    void testNullLineSeparatorRejected() {
+        assertThrows(NullPointerException.class, () ->
+                DecompilerConfigurationBuilder.builder().lineSeparator(null));
+    }
+
+
+    /**
+     * Test that negative maxMethodTimeSeconds is rejected.
+     */
+    @Test
+    void testNegativeMaxMethodTimeSecondsRejected() {
+        assertThrows(IllegalArgumentException.class, () ->
+                DecompilerConfigurationBuilder.builder().maxMethodTimeSeconds(-1));
+    }
+
+
+    /**
+     * Test that an invalid max.method.time.seconds property value is ignored gracefully.
+     */
+    @Test
+    void testInvalidMaxMethodTimeSecondsProperty() {
+        Properties props = new Properties();
+        props.setProperty("max.method.time.seconds", "notanumber");
+
+        IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
+                .maxMethodTimeSeconds(42)
+                .loadFromProperties(props)
+                .build();
+
+        assertEquals(42, config.getMaxMethodTimeSeconds());
+    }
+
+
+    /**
+     * Test that a negative max.method.time.seconds property value is ignored gracefully.
+     */
+    @Test
+    void testNegativeMaxMethodTimeSecondsProperty() {
+        Properties props = new Properties();
+        props.setProperty("max.method.time.seconds", "-5");
+
+        IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
+                .maxMethodTimeSeconds(10)
+                .loadFromProperties(props)
+                .build();
+
+        assertEquals(10, config.getMaxMethodTimeSeconds());
+    }
+
+
+    /**
+     * Test that an invalid include class regex does not crash decompiler construction.
+     */
+    @Test
+    void testInvalidIncludeRegexDoesNotCrash() {
+        IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
+                .includeClassRegex("[invalid")
+                .build();
+
+        IDecompiler decompiler = DecompilerFactory.getInstance().getDecompiler(config);
+        assertNotNull(decompiler);
+    }
+
+
+    /**
+     * Test that an invalid exclude class regex does not crash decompiler construction.
+     */
+    @Test
+    void testInvalidExcludeRegexDoesNotCrash() {
+        IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
+                .excludeClassRegex("(unclosed")
                 .build();
 
         IDecompiler decompiler = DecompilerFactory.getInstance().getDecompiler(config);

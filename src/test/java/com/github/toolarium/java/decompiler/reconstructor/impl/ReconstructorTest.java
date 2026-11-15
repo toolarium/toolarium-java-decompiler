@@ -15,6 +15,8 @@ import com.github.toolarium.java.decompiler.api.IDecompiler;
 import com.github.toolarium.java.decompiler.model.ast.declaration.DeclarationModelFactory;
 import com.github.toolarium.java.decompiler.model.ast.declaration.IClassDeclaration;
 import com.github.toolarium.java.decompiler.model.ast.declaration.IFieldDeclaration;
+import com.github.toolarium.java.decompiler.model.ast.declaration.IMethodDeclaration;
+import com.github.toolarium.java.decompiler.model.ast.declaration.IParameterDeclaration;
 import com.github.toolarium.java.decompiler.model.classfile.ClassfileModelFactory;
 import com.github.toolarium.java.decompiler.model.classfile.IClassFileMetadata;
 import com.github.toolarium.java.decompiler.model.classfile.IStructClass;
@@ -42,6 +44,8 @@ import org.objectweb.asm.Opcodes;
  */
 public class ReconstructorTest {
     private static final String OBJECT_TYPE = "java/lang/Object";
+    private static final String MY_CLASS = "MyClass";
+    private static final String MY_ENUM = "MyEnum";
     private final IDecompiler decompiler = DecompilerFactory.getInstance().getDecompiler();
 
 
@@ -370,18 +374,250 @@ public class ReconstructorTest {
         IClassFileMetadata myClassMetadata = ClassfileModelFactory.getInstance().getClassFileMetadata(
                 52, 0, null, null, Collections.emptyList(), Collections.emptyList(), null);
         IStructClass structClass = ClassfileModelFactory.getInstance().getStructClass(
-                myClassMetadata, emptyPool, publicFlags, "MyClass", OBJECT_TYPE,
+                myClassMetadata, emptyPool, publicFlags, MY_CLASS, OBJECT_TYPE,
                 Collections.emptyList(), structFields, Collections.emptyList(),
                 Collections.emptyList(), Collections.emptyList());
 
         IType objectType = TypeModelFactory.getInstance().getObjectType(OBJECT_TYPE);
         IClassDeclaration classDecl = DeclarationModelFactory.getInstance().getClassDeclaration(
-                publicFlags, "MyClass", objectType, Collections.emptyList(),
+                publicFlags, MY_CLASS, objectType, Collections.emptyList(),
                 fields, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
                 null, false);
         IClassDeclaration result = synRecon.reconstruct(classDecl, structClass);
         assertNotNull(result);
         assertEquals(2, result.getFields().size());
+    }
+
+
+    /**
+     * Test EnumReconstructor is registered.
+     */
+    @Test
+    void testEnumReconstructorRegistered() {
+        IReconstructor enumRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("EnumReconstructor");
+        assertNotNull(enumRecon);
+        assertEquals("EnumReconstructor", enumRecon.getName());
+    }
+
+
+    /**
+     * Test EnumReconstructor applies only to enum classes.
+     */
+    @Test
+    void testEnumReconstructorAppliesOnlyToEnums() {
+        IReconstructor enumRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("EnumReconstructor");
+        assertNotNull(enumRecon);
+
+        IAccessFlags enumFlags = CommonModelFactory.getInstance()
+                .getAccessFlags(Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_ENUM);
+        IAccessFlags publicFlags = CommonModelFactory.getInstance().getAccessFlags(Opcodes.ACC_PUBLIC);
+        IConstantPool emptyPool = CommonModelFactory.getInstance().getConstantPool(new Object[0]);
+        IClassFileMetadata metadata = ClassfileModelFactory.getInstance().getClassFileMetadata(
+                52, 0, null, null, Collections.emptyList(), Collections.emptyList(), null);
+
+        IStructClass enumClass = ClassfileModelFactory.getInstance().getStructClass(
+                metadata, emptyPool, enumFlags, MY_ENUM, "java/lang/Enum",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList());
+        assertTrue(enumRecon.applies(enumClass));
+
+        IStructClass regularClass = ClassfileModelFactory.getInstance().getStructClass(
+                metadata, emptyPool, publicFlags, MY_CLASS, OBJECT_TYPE,
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList());
+        assertFalse(enumRecon.applies(regularClass));
+    }
+
+
+    /**
+     * Test EnumReconstructor removes synthetic methods (values, valueOf, clinit).
+     */
+    @Test
+    void testEnumReconstructorRemovesSyntheticMethods() {
+        IReconstructor enumRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("EnumReconstructor");
+        assertNotNull(enumRecon);
+
+        DeclarationModelFactory declFactory = DeclarationModelFactory.getInstance();
+        IAccessFlags enumFlags = CommonModelFactory.getInstance()
+                .getAccessFlags(Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_ENUM);
+        IAccessFlags publicStaticFlags = CommonModelFactory.getInstance()
+                .getAccessFlags(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC);
+        IType enumType = TypeModelFactory.getInstance().getObjectType(MY_ENUM);
+        IType enumArrayType = TypeModelFactory.getInstance().getArrayType(enumType, 1);
+        IType stringType = TypeModelFactory.getInstance().getObjectType("java/lang/String");
+        IType voidType = TypeModelFactory.getInstance().getPrimitiveType('V');
+
+        IParameterDeclaration nameParam = declFactory.getParameterDeclaration(
+                stringType, "name", false, Collections.emptyList());
+
+        IMethodDeclaration valuesMethod = declFactory.getMethodDeclaration(
+                publicStaticFlags, "values", enumArrayType,
+                Collections.emptyList(), Collections.emptyList(),
+                null, false, Collections.emptyList());
+        IMethodDeclaration valueOfMethod = declFactory.getMethodDeclaration(
+                publicStaticFlags, "valueOf", enumType,
+                Collections.singletonList(nameParam), Collections.emptyList(),
+                null, false, Collections.emptyList());
+        IMethodDeclaration clinitMethod = declFactory.getMethodDeclaration(
+                publicStaticFlags, "<clinit>", voidType,
+                Collections.emptyList(), Collections.emptyList(),
+                null, false, Collections.emptyList());
+        IMethodDeclaration userMethod = declFactory.getMethodDeclaration(
+                CommonModelFactory.getInstance().getAccessFlags(Opcodes.ACC_PUBLIC),
+                "getLabel", stringType,
+                Collections.emptyList(), Collections.emptyList(),
+                null, false, Collections.emptyList());
+
+        List<IMethodDeclaration> methods = new ArrayList<>();
+        methods.add(valuesMethod);
+        methods.add(valueOfMethod);
+        methods.add(clinitMethod);
+        methods.add(userMethod);
+
+        IConstantPool emptyPool = CommonModelFactory.getInstance().getConstantPool(new Object[0]);
+        IClassFileMetadata metadata = ClassfileModelFactory.getInstance().getClassFileMetadata(
+                52, 0, null, null, Collections.emptyList(), Collections.emptyList(), null);
+        IStructClass structClass = ClassfileModelFactory.getInstance().getStructClass(
+                metadata, emptyPool, enumFlags, MY_ENUM, "java/lang/Enum",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList());
+
+        IType superType = TypeModelFactory.getInstance().getObjectType("java/lang/Enum");
+        IClassDeclaration classDecl = declFactory.getClassDeclaration(
+                enumFlags, MY_ENUM, superType, Collections.emptyList(),
+                Collections.emptyList(), methods, Collections.emptyList(), Collections.emptyList(),
+                null, false);
+
+        IClassDeclaration result = enumRecon.reconstruct(classDecl, structClass);
+        assertNotNull(result);
+        assertEquals(1, result.getMethods().size());
+        assertEquals("getLabel", result.getMethods().get(0).getName());
+    }
+
+
+    /**
+     * Test EnumReconstructor removes the synthetic $VALUES field.
+     */
+    @Test
+    void testEnumReconstructorRemovesValuesField() {
+        IReconstructor enumRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("EnumReconstructor");
+        assertNotNull(enumRecon);
+
+        DeclarationModelFactory declFactory = DeclarationModelFactory.getInstance();
+        IAccessFlags enumFlags = CommonModelFactory.getInstance()
+                .getAccessFlags(Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_ENUM);
+        IAccessFlags syntheticStaticFlags = CommonModelFactory.getInstance()
+                .getAccessFlags(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_SYNTHETIC);
+        IAccessFlags publicStaticFinalFlags = CommonModelFactory.getInstance()
+                .getAccessFlags(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_ENUM);
+        IType enumType = TypeModelFactory.getInstance().getObjectType(MY_ENUM);
+        IType enumArrayType = TypeModelFactory.getInstance().getArrayType(enumType, 1);
+
+        IFieldDeclaration redField = declFactory.getFieldDeclaration(
+                publicStaticFinalFlags, enumType, "RED", null, Collections.emptyList());
+        IFieldDeclaration valuesField = declFactory.getFieldDeclaration(
+                syntheticStaticFlags, enumArrayType, "$VALUES", null, Collections.emptyList());
+
+        List<IFieldDeclaration> fields = new ArrayList<>();
+        fields.add(redField);
+        fields.add(valuesField);
+
+        IConstantPool emptyPool = CommonModelFactory.getInstance().getConstantPool(new Object[0]);
+        IClassFileMetadata metadata = ClassfileModelFactory.getInstance().getClassFileMetadata(
+                52, 0, null, null, Collections.emptyList(), Collections.emptyList(), null);
+        IStructClass structClass = ClassfileModelFactory.getInstance().getStructClass(
+                metadata, emptyPool, enumFlags, MY_ENUM, "java/lang/Enum",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList());
+
+        IType superType = TypeModelFactory.getInstance().getObjectType("java/lang/Enum");
+        IClassDeclaration classDecl = declFactory.getClassDeclaration(
+                enumFlags, MY_ENUM, superType, Collections.emptyList(),
+                fields, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                null, false);
+
+        IClassDeclaration result = enumRecon.reconstruct(classDecl, structClass);
+        assertNotNull(result);
+        assertEquals(1, result.getFields().size());
+        assertEquals("RED", result.getFields().get(0).getName());
+    }
+
+
+    /**
+     * Test StringSwitchReconstructor is registered.
+     */
+    @Test
+    void testStringSwitchReconstructorRegistered() {
+        IReconstructor strSwitchRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("StringSwitchReconstructor");
+        assertNotNull(strSwitchRecon);
+        assertEquals("StringSwitchReconstructor", strSwitchRecon.getName());
+    }
+
+
+    /**
+     * Test StringSwitchReconstructor applies to all classes.
+     */
+    @Test
+    void testStringSwitchReconstructorAppliesToAll() {
+        IReconstructor strSwitchRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("StringSwitchReconstructor");
+        assertNotNull(strSwitchRecon);
+
+        IAccessFlags publicFlags = CommonModelFactory.getInstance().getAccessFlags(Opcodes.ACC_PUBLIC);
+        IConstantPool emptyPool = CommonModelFactory.getInstance().getConstantPool(new Object[0]);
+        IClassFileMetadata metadata = ClassfileModelFactory.getInstance().getClassFileMetadata(
+                52, 0, null, null, Collections.emptyList(), Collections.emptyList(), null);
+        IStructClass structClass = ClassfileModelFactory.getInstance().getStructClass(
+                metadata, emptyPool, publicFlags, MY_CLASS, OBJECT_TYPE,
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList());
+
+        assertTrue(strSwitchRecon.applies(structClass));
+    }
+
+
+    /**
+     * Test StringSwitchReconstructor returns unchanged class when no pattern matches.
+     */
+    @Test
+    void testStringSwitchReconstructorNoChange() {
+        IReconstructor strSwitchRecon = ReconstructorFactory.getInstance()
+                .getReconstructor("StringSwitchReconstructor");
+        assertNotNull(strSwitchRecon);
+
+        DeclarationModelFactory declFactory = DeclarationModelFactory.getInstance();
+        IAccessFlags publicFlags = CommonModelFactory.getInstance().getAccessFlags(Opcodes.ACC_PUBLIC);
+        IType objectType = TypeModelFactory.getInstance().getObjectType(OBJECT_TYPE);
+        IType voidType = TypeModelFactory.getInstance().getPrimitiveType('V');
+
+        IMethodDeclaration simpleMethod = declFactory.getMethodDeclaration(
+                publicFlags, "doWork", voidType,
+                Collections.emptyList(), Collections.emptyList(),
+                null, false, Collections.emptyList());
+
+        List<IMethodDeclaration> methods = new ArrayList<>();
+        methods.add(simpleMethod);
+
+        IConstantPool emptyPool = CommonModelFactory.getInstance().getConstantPool(new Object[0]);
+        IClassFileMetadata metadata = ClassfileModelFactory.getInstance().getClassFileMetadata(
+                52, 0, null, null, Collections.emptyList(), Collections.emptyList(), null);
+        IStructClass structClass = ClassfileModelFactory.getInstance().getStructClass(
+                metadata, emptyPool, publicFlags, MY_CLASS, OBJECT_TYPE,
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList());
+
+        IClassDeclaration classDecl = declFactory.getClassDeclaration(
+                publicFlags, MY_CLASS, objectType, Collections.emptyList(),
+                Collections.emptyList(), methods, Collections.emptyList(), Collections.emptyList(),
+                null, false);
+
+        IClassDeclaration result = strSwitchRecon.reconstruct(classDecl, structClass);
+        assertEquals(classDecl, result);
     }
 
 

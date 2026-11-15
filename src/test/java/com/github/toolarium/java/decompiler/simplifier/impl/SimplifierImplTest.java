@@ -331,6 +331,44 @@ public class SimplifierImplTest {
 
 
     /**
+     * Test that deeply nested statements do not cause a stack overflow.
+     * The simplifier has a MAX_SIMPLIFICATION_DEPTH guard at 500.
+     */
+    @Test
+    void testSimplifyStatementsDeeplyNestedDoesNotCrash() {
+        StatementModelFactory stmtFactory = StatementModelFactory.getInstance();
+        IExpression trueConst = exprFactory.getConstantExpression(boolType, Boolean.TRUE);
+
+        IStatement inner = stmtFactory.getReturnStatement(null,
+                exprFactory.getConstantExpression(intType, 0));
+        for (int i = 0; i < 600; i++) {
+            IStatement ifStmt = stmtFactory.getIfStatement(null, trueConst,
+                    stmtFactory.getBlockStatement(null, Collections.singletonList(inner)), null);
+            inner = ifStmt;
+        }
+
+        IBlockStatement block = stmtFactory.getBlockStatement(null, Collections.singletonList(inner));
+        IBlockStatement result = simplifier.simplify(block);
+
+        assertNotNull(result);
+    }
+
+
+    /**
+     * Test that simplifying an empty block returns an empty block.
+     */
+    @Test
+    void testSimplifyEmptyBlock() {
+        StatementModelFactory stmtFactory = StatementModelFactory.getInstance();
+        IBlockStatement block = stmtFactory.getBlockStatement(null, new ArrayList<>());
+        IBlockStatement result = simplifier.simplify(block);
+
+        assertNotNull(result);
+        assertTrue(result.getStatements().isEmpty());
+    }
+
+
+    /**
      * Test factory singleton.
      */
     @Test

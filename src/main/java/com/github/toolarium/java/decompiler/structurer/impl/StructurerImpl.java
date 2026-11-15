@@ -40,6 +40,7 @@ public class StructurerImpl implements IStructurer {
     private static final Logger LOG = LoggerFactory.getLogger(StructurerImpl.class);
     private static final String CONDITION_PREFIX = "cond_";
     private static final int MAX_STRUCTURE_DEPTH = 500;
+    private static final int MAX_CONVERGENCE_ITERATIONS = 10_000;
 
 
     /**
@@ -561,7 +562,15 @@ public class StructurerImpl implements IStructurer {
             return thenTarget;
         }
 
+        int iterations = 0;
         while (!thenQueue.isEmpty() || !elseQueue.isEmpty()) {
+            iterations++;
+            if (iterations > MAX_CONVERGENCE_ITERATIONS) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Convergence point search exceeded maximum iterations.");
+                }
+                return null;
+            }
             if (!thenQueue.isEmpty()) {
                 IBasicBlock current = thenQueue.poll();
                 for (IEdge edge : current.getOutEdges()) {

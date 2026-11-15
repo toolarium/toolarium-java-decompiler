@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.9.0 - 2026-11-15
 ### Added
+- Archive output: decompile directly into JAR, ZIP, WAR, or EAR archives via `-o output.jar`.
+- Parallel batch decompilation using available processors by default.
+- CLI `--parallel-threads` / `-t` option for controlling thread count.
 - Fluent configuration builder with 20+ options for output formatting, feature toggles, class filtering, and error handling.
 - Properties file support for loading decompiler settings.
 - CLI `--config` / `-c` option for configuration via properties file.

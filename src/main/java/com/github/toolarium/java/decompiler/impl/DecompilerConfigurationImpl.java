@@ -6,6 +6,7 @@
 package com.github.toolarium.java.decompiler.impl;
 
 import com.github.toolarium.java.decompiler.api.IDecompilerConfiguration;
+import java.util.Objects;
 
 
 /**
@@ -36,6 +37,7 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
     private final String excludeClassRegex;
     private final boolean ignoreInvalidBytecode;
     private final int maxMethodTimeSeconds;
+    private final int parallelThreads;
 
 
     /**
@@ -69,6 +71,7 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
         this.excludeClassRegex = filterAndError.getExcludeClassRegex();
         this.ignoreInvalidBytecode = filterAndError.isIgnoreInvalidBytecode();
         this.maxMethodTimeSeconds = filterAndError.getMaxMethodTimeSeconds();
+        this.parallelThreads = filterAndError.getParallelThreads();
     }
 
 
@@ -304,35 +307,105 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
 
 
     /**
+     * Get the number of threads to use for parallel batch decompilation.
+     *
+     * @return the number of parallel threads (0 or 1 = sequential)
+     */
+    @Override
+    public int getParallelThreads() {
+        return parallelThreads;
+    }
+
+
+    /**
+     * Check equality based on all configuration fields.
+     *
+     * @param obj the object to compare
+     * @return true if equal
+     */
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof DecompilerConfigurationImpl)) {
+            return false;
+        }
+        DecompilerConfigurationImpl other = (DecompilerConfigurationImpl) obj;
+        return showBanner == other.showBanner
+                && showSourceFile == other.showSourceFile
+                && removeBridgeMethods == other.removeBridgeMethods
+                && removeSyntheticMembers == other.removeSyntheticMembers
+                && reconstructAssert == other.reconstructAssert
+                && reconstructEnum == other.reconstructEnum
+                && reconstructInnerClasses == other.reconstructInnerClasses
+                && reconstructLambda == other.reconstructLambda
+                && reconstructTryWithResources == other.reconstructTryWithResources
+                && reconstructStringSwitch == other.reconstructStringSwitch
+                && reconstructRecord == other.reconstructRecord
+                && reconstructTextBlocks == other.reconstructTextBlocks
+                && hideDefaultConstructor == other.hideDefaultConstructor
+                && hideEmptySuper == other.hideEmptySuper
+                && showOverrideAnnotation == other.showOverrideAnnotation
+                && ignoreInvalidBytecode == other.ignoreInvalidBytecode
+                && maxMethodTimeSeconds == other.maxMethodTimeSeconds
+                && parallelThreads == other.parallelThreads
+                && Objects.equals(indentString, other.indentString)
+                && Objects.equals(lineSeparator, other.lineSeparator)
+                && Objects.equals(includeClassRegex, other.includeClassRegex)
+                && Objects.equals(excludeClassRegex, other.excludeClassRegex);
+    }
+
+
+    /**
+     * Compute a hash code based on all configuration fields.
+     *
+     * @return the hash code
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(indentString, lineSeparator, showBanner, showSourceFile,
+                removeBridgeMethods, removeSyntheticMembers, reconstructAssert,
+                reconstructEnum, reconstructInnerClasses, reconstructLambda,
+                reconstructTryWithResources, reconstructStringSwitch, reconstructRecord,
+                reconstructTextBlocks, hideDefaultConstructor, hideEmptySuper,
+                showOverrideAnnotation, includeClassRegex, excludeClassRegex,
+                ignoreInvalidBytecode, maxMethodTimeSeconds, parallelThreads);
+    }
+
+
+    /**
      * Return a string representation of this configuration.
      *
      * @return the string representation
      */
     @Override
     public String toString() {
-        return "DecompilerConfigurationImpl{"
-                + "indentString='" + indentString + "'"
-                + ", lineSeparator='" + escapeLineSeparator(lineSeparator) + "'"
-                + ", showBanner=" + showBanner
-                + ", showSourceFile=" + showSourceFile
-                + ", removeBridgeMethods=" + removeBridgeMethods
-                + ", removeSyntheticMembers=" + removeSyntheticMembers
-                + ", reconstructAssert=" + reconstructAssert
-                + ", reconstructEnum=" + reconstructEnum
-                + ", reconstructInnerClasses=" + reconstructInnerClasses
-                + ", reconstructLambda=" + reconstructLambda
-                + ", reconstructTryWithResources=" + reconstructTryWithResources
-                + ", reconstructStringSwitch=" + reconstructStringSwitch
-                + ", reconstructRecord=" + reconstructRecord
-                + ", reconstructTextBlocks=" + reconstructTextBlocks
-                + ", hideDefaultConstructor=" + hideDefaultConstructor
-                + ", hideEmptySuper=" + hideEmptySuper
-                + ", showOverrideAnnotation=" + showOverrideAnnotation
-                + ", includeClassRegex=" + includeClassRegex
-                + ", excludeClassRegex=" + excludeClassRegex
-                + ", ignoreInvalidBytecode=" + ignoreInvalidBytecode
-                + ", maxMethodTimeSeconds=" + maxMethodTimeSeconds
-                + "}";
+        StringBuilder sb = new StringBuilder("DecompilerConfigurationImpl{");
+        sb.append("indentString='").append(indentString).append("'");
+        sb.append(", lineSeparator='").append(escapeLineSeparator(lineSeparator)).append("'");
+        sb.append(", showBanner=").append(showBanner);
+        sb.append(", showSourceFile=").append(showSourceFile);
+        sb.append(", removeBridgeMethods=").append(removeBridgeMethods);
+        sb.append(", removeSyntheticMembers=").append(removeSyntheticMembers);
+        sb.append(", reconstructAssert=").append(reconstructAssert);
+        sb.append(", reconstructEnum=").append(reconstructEnum);
+        sb.append(", reconstructInnerClasses=").append(reconstructInnerClasses);
+        sb.append(", reconstructLambda=").append(reconstructLambda);
+        sb.append(", reconstructTryWithResources=").append(reconstructTryWithResources);
+        sb.append(", reconstructStringSwitch=").append(reconstructStringSwitch);
+        sb.append(", reconstructRecord=").append(reconstructRecord);
+        sb.append(", reconstructTextBlocks=").append(reconstructTextBlocks);
+        sb.append(", hideDefaultConstructor=").append(hideDefaultConstructor);
+        sb.append(", hideEmptySuper=").append(hideEmptySuper);
+        sb.append(", showOverrideAnnotation=").append(showOverrideAnnotation);
+        sb.append(", includeClassRegex=").append(includeClassRegex);
+        sb.append(", excludeClassRegex=").append(excludeClassRegex);
+        sb.append(", ignoreInvalidBytecode=").append(ignoreInvalidBytecode);
+        sb.append(", maxMethodTimeSeconds=").append(maxMethodTimeSeconds);
+        sb.append(", parallelThreads=").append(parallelThreads);
+        sb.append("}");
+        return sb.toString();
     }
 
 
@@ -440,41 +513,6 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
 
         /**
          * Constructor for FeatureToggleOptions.
-         *
-         * @param removeBridge    whether to remove bridge methods
-         * @param removeSynthetic whether to remove synthetic members
-         * @param assertToggle    whether to reconstruct assert statements
-         * @param enumToggle      whether to reconstruct enum declarations
-         * @param innerClasses    whether to reconstruct inner classes
-         * @param lambda          whether to reconstruct lambda expressions
-         * @param tryResources    whether to reconstruct try-with-resources
-         * @param stringSwitch    whether to reconstruct string switch
-         * @param record          whether to reconstruct records
-         * @param textBlocks      whether to reconstruct text blocks
-         */
-        public FeatureToggleOptions(boolean removeBridge, boolean removeSynthetic,
-                                     boolean assertToggle, boolean enumToggle,
-                                     boolean innerClasses, boolean lambda,
-                                     boolean tryResources, boolean stringSwitch,
-                                     boolean record, boolean textBlocks) {
-            this.removeBridgeMethods = removeBridge;
-            this.removeSyntheticMembers = removeSynthetic;
-            this.reconstructAssert = assertToggle;
-            this.reconstructEnum = enumToggle;
-            this.reconstructInnerClasses = innerClasses;
-            this.reconstructLambda = lambda;
-            this.reconstructTryWithResources = tryResources;
-            this.reconstructStringSwitch = stringSwitch;
-            this.reconstructRecord = record;
-            this.reconstructTextBlocks = textBlocks;
-            this.hideDefaultConstructor = true;
-            this.hideEmptySuper = true;
-            this.showOverrideAnnotation = false;
-        }
-
-
-        /**
-         * Constructor for FeatureToggleOptions with all fields.
          *
          * @param removeBridge    whether to remove bridge methods
          * @param removeSynthetic whether to remove synthetic members
@@ -720,6 +758,7 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
         private final String excludeClassRegex;
         private final boolean ignoreInvalidBytecode;
         private final int maxMethodTimeSeconds;
+        private final int parallelThreads;
 
 
         /**
@@ -729,13 +768,16 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
          * @param excludeClassRegex    the exclude class regex
          * @param ignoreInvalidBytecode whether to ignore invalid bytecode
          * @param maxMethodTimeSeconds  the max method time in seconds
+         * @param parallelThreads       the number of parallel threads
          */
         public FilterAndErrorOptions(String includeClassRegex, String excludeClassRegex,
-                                      boolean ignoreInvalidBytecode, int maxMethodTimeSeconds) {
+                                      boolean ignoreInvalidBytecode, int maxMethodTimeSeconds,
+                                      int parallelThreads) {
             this.includeClassRegex = includeClassRegex;
             this.excludeClassRegex = excludeClassRegex;
             this.ignoreInvalidBytecode = ignoreInvalidBytecode;
             this.maxMethodTimeSeconds = maxMethodTimeSeconds;
+            this.parallelThreads = parallelThreads;
         }
 
 
@@ -776,6 +818,16 @@ public final class DecompilerConfigurationImpl implements IDecompilerConfigurati
          */
         public int getMaxMethodTimeSeconds() {
             return maxMethodTimeSeconds;
+        }
+
+
+        /**
+         * Get the number of parallel threads.
+         *
+         * @return the number of parallel threads
+         */
+        public int getParallelThreads() {
+            return parallelThreads;
         }
     }
 }

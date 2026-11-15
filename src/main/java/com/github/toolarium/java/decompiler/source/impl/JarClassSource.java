@@ -32,6 +32,7 @@ public class JarClassSource implements IClassSource {
     private static final String CLASS_EXTENSION = ".class";
     private static final String PATH_TRAVERSAL_SEGMENT = "..";
     private static final long MAX_CLASS_FILE_SIZE = 10L * 1024L * 1024L;
+    private static final int MAX_JAR_ENTRIES = 500_000;
     private static final int BUFFER_SIZE = 8192;
 
     private final JarFile jarFile;
@@ -60,8 +61,17 @@ public class JarClassSource implements IClassSource {
     public List<String> listClasses() throws IOException {
         List<String> classes = new ArrayList<>();
         Enumeration<JarEntry> entries = jarFile.entries();
+        int entryCount = 0;
         while (entries.hasMoreElements()) {
             JarEntry entry = entries.nextElement();
+            entryCount++;
+            if (entryCount > MAX_JAR_ENTRIES) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("JAR entry count exceeded limit of " + MAX_JAR_ENTRIES + ", stopping enumeration.");
+                }
+                LOG.warn("JAR contains more than " + MAX_JAR_ENTRIES + " entries, only the first " + MAX_JAR_ENTRIES + " are processed.");
+                break;
+            }
             String entryName = entry.getName();
 
             if (containsPathTraversal(entryName)) {

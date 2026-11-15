@@ -33,6 +33,7 @@ import org.objectweb.asm.tree.MethodNode;
  * @author patrick
  */
 public class StructurerImplTest {
+    private static final String DESC_VOID = "()V";
     private final IControlFlowBuilder cfgBuilder = ControlFlowBuilderFactory.getInstance().getCfgBuilder();
     private final IStructurer structurer = StructurerFactory.getInstance().getStructurer();
 
@@ -42,7 +43,7 @@ public class StructurerImplTest {
      */
     @Test
     void testLinearMethod() {
-        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "linear", "()V", null, null);
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "linear", DESC_VOID, null, null);
         method.visitVarInsn(Opcodes.ALOAD, 0);
         method.visitInsn(Opcodes.RETURN);
         method.visitMaxs(1, 1);
@@ -99,7 +100,7 @@ public class StructurerImplTest {
      */
     @Test
     void testLoopProducesWhileStatement() {
-        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "loop", "()V", null, null);
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "loop", DESC_VOID, null, null);
         Label loopStart = new Label();
         Label loopEnd = new Label();
 
@@ -140,7 +141,7 @@ public class StructurerImplTest {
      */
     @Test
     void testTryCatchProducesTryCatchStatement() {
-        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "tryCatch", "()V", null, null);
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "tryCatch", DESC_VOID, null, null);
         Label tryStart = new Label();
         Label tryEnd = new Label();
         Label catchHandler = new Label();
@@ -186,7 +187,7 @@ public class StructurerImplTest {
      */
     @Test
     void testEmptyMethod() {
-        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "empty", "()V", null, null);
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "empty", DESC_VOID, null, null);
         method.visitMaxs(0, 1);
 
         IControlFlowGraph cfg = cfgBuilder.buildCfg(method);
@@ -300,7 +301,7 @@ public class StructurerImplTest {
      */
     @Test
     void testTryCatchFinally() {
-        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "tryCatchFinally", "()V", null, null);
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "tryCatchFinally", DESC_VOID, null, null);
         Label tryStart = new Label();
         Label tryEnd = new Label();
         Label catchHandler = new Label();
@@ -387,6 +388,62 @@ public class StructurerImplTest {
             }
         }
         assertTrue(ifCount >= 1, "Expected at least one if statement for sequential branches");
+    }
+
+
+    /**
+     * Test structuring a method with only a return instruction produces a valid result.
+     * This exercises the structurer on a minimal CFG.
+     */
+    @Test
+    void testStructureMinimalReturnOnly() {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "minimal", DESC_VOID, null, null);
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(0, 1);
+
+        IControlFlowGraph cfg = cfgBuilder.buildCfg(method);
+        IBlockStatement result = structurer.structure(cfg);
+
+        assertNotNull(result);
+        assertFalse(result.getStatements().isEmpty());
+    }
+
+
+    /**
+     * Test structuring a deeply branching method does not crash.
+     * Exercises the MAX_STRUCTURE_DEPTH guard at 500.
+     */
+    @Test
+    void testStructureDeepNesting() {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "deep", "(I)V", null, null);
+
+        Label[] elseLabels = new Label[50];
+        Label[] endLabels = new Label[50];
+        for (int i = 0; i < 50; i++) {
+            elseLabels[i] = new Label();
+            endLabels[i] = new Label();
+        }
+
+        for (int i = 0; i < 50; i++) {
+            method.visitVarInsn(Opcodes.ILOAD, 1);
+            method.visitJumpInsn(Opcodes.IFEQ, elseLabels[i]);
+        }
+
+        method.visitInsn(Opcodes.RETURN);
+
+        for (int i = 49; i >= 0; i--) {
+            method.visitLabel(elseLabels[i]);
+            method.visitVarInsn(Opcodes.ALOAD, 0);
+            method.visitLabel(endLabels[i]);
+        }
+
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(2, 2);
+
+        IControlFlowGraph cfg = cfgBuilder.buildCfg(method);
+        IBlockStatement result = structurer.structure(cfg);
+
+        assertNotNull(result);
     }
 
 

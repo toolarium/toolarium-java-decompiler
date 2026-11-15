@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
 public class BytecodeTranslatorImpl implements IBytecodeTranslator {
     private static final Logger LOG = LoggerFactory.getLogger(BytecodeTranslatorImpl.class);
     private static final String THIS_VAR = "this";
-    private static final int MAX_RECURSION_DEPTH = 50;
+    private static final int MAX_RECURSION_DEPTH = 100;
     private static final int MAX_LOCALS = 1024;
     private static final int MAX_STACK_SIZE = 1024;
     private static final char RECIPE_ARG_PLACEHOLDER = '\u0001';
@@ -59,6 +59,14 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
     private final ExpressionModelFactory exprFactory = ExpressionModelFactory.getInstance();
     private final StatementModelFactory stmtFactory = StatementModelFactory.getInstance();
     private final TypeModelFactory typeFactory = TypeModelFactory.getInstance();
+    private final IType cachedBoolType = typeFactory.getPrimitiveType('Z');
+    private final IType cachedByteType = typeFactory.getPrimitiveType('B');
+    private final IType cachedCharType = typeFactory.getPrimitiveType('C');
+    private final IType cachedShortType = typeFactory.getPrimitiveType('S');
+    private final IType cachedIntType = typeFactory.getPrimitiveType('I');
+    private final IType cachedLongType = typeFactory.getPrimitiveType('J');
+    private final IType cachedFloatType = typeFactory.getPrimitiveType('F');
+    private final IType cachedDoubleType = typeFactory.getPrimitiveType('D');
 
     private Deque<IExpression> stack;
     private IExpression[] locals;
@@ -68,6 +76,9 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
     private boolean returnsBooleanType;
     private int recursionDepth;
     private java.util.Map<Integer, String> localNames;
+    private List<int[]> allBackEdges;
+    private long maxTranslationTimeNanos;
+    private long translationStartNanos;
 
 
     /**
@@ -75,6 +86,22 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
      */
     public BytecodeTranslatorImpl() {
         // default constructor
+    }
+
+
+    /**
+     * Set the maximum time in seconds allowed for translating a single method.
+     * A value of zero or negative disables the limit.
+     *
+     * @param seconds the maximum translation time in seconds
+     */
+    @Override
+    public void setMaxTranslationTimeSeconds(int seconds) {
+        if (seconds > 0) {
+            this.maxTranslationTimeNanos = seconds * 1_000_000_000L;
+        } else {
+            this.maxTranslationTimeNanos = 0;
+        }
     }
 
 
@@ -101,15 +128,30 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
         Type returnType = Type.getReturnType(methodNode.desc);
         this.returnsBooleanType = (returnType.getSort() == Type.BOOLEAN);
         this.localNames = new java.util.HashMap<>();
+        this.recursionDepth = 0;
+        this.translationStartNanos = System.nanoTime();
 
         initLocals(methodNode);
 
         // Build label-to-index map for jump resolution
-        java.util.Map<LabelNode, Integer> labelIndices = new java.util.HashMap<>();
-        for (int i = 0; i < methodNode.instructions.size(); i++) {
+        int insnCount = methodNode.instructions.size();
+        java.util.Map<LabelNode, Integer> labelIndices = new java.util.HashMap<>(insnCount / 3 + 1);
+        for (int i = 0; i < insnCount; i++) {
             AbstractInsnNode insn = methodNode.instructions.get(i);
             if (insn instanceof LabelNode) {
                 labelIndices.put((LabelNode) insn, i);
+            }
+        }
+
+        // Precompute all backward GOTO edges for efficient lookup during loop structuring
+        this.allBackEdges = new ArrayList<>();
+        for (int i = 0; i < insnCount; i++) {
+            AbstractInsnNode insn = methodNode.instructions.get(i);
+            if (insn instanceof JumpInsnNode && insn.getOpcode() == Opcodes.GOTO) {
+                Integer target = labelIndices.get(((JumpInsnNode) insn).label);
+                if (target != null && target <= i) {
+                    allBackEdges.add(new int[]{i, target});
+                }
             }
         }
 
@@ -141,6 +183,14 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
         if (recursionDepth > MAX_RECURSION_DEPTH) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Recursion depth exceeded during bytecode translation, region may be incomplete.");
+            }
+            recursionDepth--;
+            return;
+        }
+        if (maxTranslationTimeNanos > 0
+                && (System.nanoTime() - translationStartNanos) > maxTranslationTimeNanos) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Translation time limit exceeded, returning partial result.");
             }
             recursionDepth--;
             return;
@@ -191,6 +241,10 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
                     Integer targetIdx = labelIndices.get(jumpInsn.label);
                     if (targetIdx != null && targetIdx <= i) {
                         visited.add(i);
+                        if (targetIdx < startIdx) {
+                            // Back-edge exits the current region (continue to outer loop)
+                            return;
+                        }
                         emitLoopFromBackEdge(methodNode, targetIdx, i, endIdx, labelIndices, visited);
                         return;
                     }
@@ -294,9 +348,11 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
         // Negate: bytecode jumps to exit when false, we want "while true" condition
         IExpression condition = negateCondition(safePop());
 
-        // Translate loop body (from after the condition to the back-edge GOTO)
-        List<IStatement> bodyStatements = translateBranch(
-                methodNode, condJumpIdx + 1, backEdgeIdx, labelIndices, new java.util.HashSet<>());
+        // Translate loop body (from after the condition to the back-edge GOTO).
+        // Pre-mark backward GOTOs targeting at or before the loop header to prevent
+        // recursive re-translation when catch/finally handlers jump back to the loop start.
+        java.util.Set<Integer> bodyVisited = collectOuterBackEdges(condJumpIdx + 1, backEdgeIdx, condJumpIdx);
+        List<IStatement> bodyStatements = translateBranch(methodNode, condJumpIdx + 1, backEdgeIdx, labelIndices, bodyVisited);
 
         IStatement bodyBlock = stmtFactory.getBlockStatement(null, bodyStatements);
         statements.add(stmtFactory.getWhileStatement(null, condition, bodyBlock));
@@ -339,9 +395,11 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
             }
         }
 
-        // Translate the loop body
-        List<IStatement> bodyStatements = translateBranch(
-                methodNode, bodyStart, gotoIdx, labelIndices, new java.util.HashSet<>());
+        // Translate the loop body.
+        // Pre-mark backward GOTOs targeting at or before the loop header to prevent
+        // recursive re-translation when catch/finally handlers jump back to the loop start.
+        java.util.Set<Integer> bodyVisited = collectOuterBackEdges(bodyStart, gotoIdx, bodyStart);
+        List<IStatement> bodyStatements = translateBranch(methodNode, bodyStart, gotoIdx, labelIndices, bodyVisited);
 
         // If body ends with a condition expression on stack, use it (negated)
         if (!stack.isEmpty()) {
@@ -424,7 +482,7 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
 
             boolean isDefault = (defaultTargetIdx != null && targetIdx == defaultTargetIdx.intValue());
 
-            List<IStatement> caseBody = translateBranch(methodNode, targetIdx, bodyEnd, labelIndices, new java.util.HashSet<>());
+            List<IStatement> caseBody = translateBranch(methodNode, targetIdx, bodyEnd, labelIndices, collectOuterBackEdges(targetIdx, bodyEnd, targetIdx));
             cases.add(stmtFactory.getSwitchCase(caseValues, isDefault, caseBody));
         }
 
@@ -456,6 +514,29 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
             }
         }
         return -1;
+    }
+
+
+    /**
+     * Collect instruction indices of backward GOTOs within a region that target at or
+     * before the given loop header. Uses the precomputed back-edge list for efficient
+     * lookup. These are marked as visited before translating the loop body so that
+     * catch/finally handlers jumping back to the enclosing loop do not trigger recursive
+     * loop creation.
+     *
+     * @param startIdx      region start (inclusive)
+     * @param endIdx        region end (exclusive)
+     * @param loopHeaderIdx the loop header instruction index
+     * @return set of instruction indices to pre-mark as visited
+     */
+    private java.util.Set<Integer> collectOuterBackEdges(int startIdx, int endIdx, int loopHeaderIdx) {
+        java.util.Set<Integer> result = new java.util.HashSet<>();
+        for (int[] edge : allBackEdges) {
+            if (edge[0] >= startIdx && edge[0] < endIdx && edge[1] <= loopHeaderIdx) {
+                result.add(edge[0]);
+            }
+        }
+        return result;
     }
 
 
@@ -1232,12 +1313,15 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
         Type methodType = Type.getMethodType(insn.desc);
         Type[] argTypes = methodType.getArgumentTypes();
 
-        // Pop arguments (right to left), then reverse for correct order
-        List<IExpression> args = new ArrayList<>();
+        // Pop arguments (right to left) into indexed array to preserve correct order
+        IExpression[] argArray = new IExpression[argTypes.length];
         for (int i = argTypes.length - 1; i >= 0; i--) {
-            args.add(safePop());
+            argArray[i] = safePop();
         }
-        java.util.Collections.reverse(args);
+        List<IExpression> args = new ArrayList<>(argTypes.length);
+        for (IExpression arg : argArray) {
+            args.add(arg);
+        }
 
         IExpression targetExpr = null;
         boolean isConstructor = "<init>".equals(insn.name);
@@ -1683,14 +1767,14 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
     private IType asmTypeToIType(Type asmType) {
         switch (asmType.getSort()) {
             case Type.VOID: return typeFactory.getPrimitiveType('V');
-            case Type.BOOLEAN: return typeFactory.getPrimitiveType('Z');
-            case Type.BYTE: return typeFactory.getPrimitiveType('B');
-            case Type.CHAR: return typeFactory.getPrimitiveType('C');
-            case Type.SHORT: return typeFactory.getPrimitiveType('S');
-            case Type.INT: return typeFactory.getPrimitiveType('I');
-            case Type.LONG: return typeFactory.getPrimitiveType('J');
-            case Type.FLOAT: return typeFactory.getPrimitiveType('F');
-            case Type.DOUBLE: return typeFactory.getPrimitiveType('D');
+            case Type.BOOLEAN: return cachedBoolType;
+            case Type.BYTE: return cachedByteType;
+            case Type.CHAR: return cachedCharType;
+            case Type.SHORT: return cachedShortType;
+            case Type.INT: return cachedIntType;
+            case Type.LONG: return cachedLongType;
+            case Type.FLOAT: return cachedFloatType;
+            case Type.DOUBLE: return cachedDoubleType;
             case Type.ARRAY:
                 IType elementType = asmTypeToIType(asmType.getElementType());
                 return typeFactory.getArrayType(elementType, asmType.getDimensions());
@@ -1711,6 +1795,7 @@ public class BytecodeTranslatorImpl implements IBytecodeTranslator {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Stack size reached limit of " + MAX_STACK_SIZE + ", discarding oldest entry.");
             }
+            LOG.warn("Operand stack reached limit of " + MAX_STACK_SIZE + ", discarding oldest entry. The class may contain pathological bytecode.");
             stack.removeLast();
         }
         stack.push(expr);

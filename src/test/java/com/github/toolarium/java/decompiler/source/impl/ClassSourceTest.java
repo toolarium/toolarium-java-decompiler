@@ -164,6 +164,42 @@ public class ClassSourceTest {
 
 
     /**
+     * Test JarClassSource lists class entries and ignores non-class entries.
+     *
+     * @param tempDir the temp directory
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testJarClassSourceListsEntries(@TempDir Path tempDir) throws Exception {
+        Path jarFile = tempDir.resolve("multi.jar");
+        try (OutputStream fos = Files.newOutputStream(jarFile);
+             JarOutputStream jos = new JarOutputStream(fos)) {
+            for (int i = 0; i < 10; i++) {
+                jos.putNextEntry(new JarEntry("pkg/Class" + i + ".class"));
+                jos.write(new byte[]{(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 52});
+                jos.closeEntry();
+            }
+            jos.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
+            jos.write("Manifest-Version: 1.0\n".getBytes());
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("resource.txt"));
+            jos.write("data".getBytes());
+            jos.closeEntry();
+        }
+
+        try (IClassSource source = ClassSourceFactory.getInstance().getJarClassSource(jarFile)) {
+            List<String> classes = source.listClasses();
+            assertEquals(10, classes.size());
+            for (int i = 0; i < 10; i++) {
+                assertTrue(classes.contains("pkg/Class" + i));
+            }
+            assertFalse(classes.stream().anyMatch(c -> c.contains("MANIFEST")));
+            assertFalse(classes.stream().anyMatch(c -> c.contains("resource")));
+        }
+    }
+
+
+    /**
      * Test factory singleton.
      */
     @Test

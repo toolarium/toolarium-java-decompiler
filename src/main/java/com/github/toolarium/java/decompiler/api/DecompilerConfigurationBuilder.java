@@ -10,7 +10,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Properties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 /**
@@ -32,6 +35,7 @@ import java.util.Properties;
  * @see IDecompilerConfiguration
  */
 public final class DecompilerConfigurationBuilder {
+    private static final Logger LOG = LoggerFactory.getLogger(DecompilerConfigurationBuilder.class);
     private static final String DEFAULT_INDENT = "    ";
     private static final String DEFAULT_LINE_SEPARATOR = "\n";
 
@@ -56,6 +60,7 @@ public final class DecompilerConfigurationBuilder {
     private String excludeClassRegex;
     private boolean ignoreInvalidBytecode;
     private int maxMethodTimeSeconds;
+    private int parallelThreads = Runtime.getRuntime().availableProcessors();
 
 
     /**
@@ -83,7 +88,7 @@ public final class DecompilerConfigurationBuilder {
      * @return this builder
      */
     public DecompilerConfigurationBuilder indentString(String indentString) {
-        this.indentString = indentString;
+        this.indentString = Objects.requireNonNull(indentString, "indentString must not be null");
         return this;
     }
 
@@ -95,7 +100,7 @@ public final class DecompilerConfigurationBuilder {
      * @return this builder
      */
     public DecompilerConfigurationBuilder lineSeparator(String lineSeparator) {
-        this.lineSeparator = lineSeparator;
+        this.lineSeparator = Objects.requireNonNull(lineSeparator, "lineSeparator must not be null");
         return this;
     }
 
@@ -324,9 +329,33 @@ public final class DecompilerConfigurationBuilder {
      *
      * @param maxMethodTimeSeconds the maximum method time in seconds
      * @return this builder
+     * @throws IllegalArgumentException if maxMethodTimeSeconds is negative
      */
     public DecompilerConfigurationBuilder maxMethodTimeSeconds(int maxMethodTimeSeconds) {
+        if (maxMethodTimeSeconds < 0) {
+            throw new IllegalArgumentException("maxMethodTimeSeconds must not be negative: " + maxMethodTimeSeconds);
+        }
         this.maxMethodTimeSeconds = maxMethodTimeSeconds;
+        return this;
+    }
+
+
+    /**
+     * Set the number of threads to use for parallel batch decompilation.
+     * A value of 0 or 1 means sequential processing.
+     * A value greater than 1 enables parallel class decompilation during
+     * {@link com.github.toolarium.java.decompiler.api.IDecompiler#decompileAll}.
+     * The default is the number of available processors.
+     *
+     * @param parallelThreads the number of threads (0 or 1 = sequential)
+     * @return this builder
+     * @throws IllegalArgumentException if parallelThreads is negative
+     */
+    public DecompilerConfigurationBuilder parallelThreads(int parallelThreads) {
+        if (parallelThreads < 0) {
+            throw new IllegalArgumentException("parallelThreads must not be negative: " + parallelThreads);
+        }
+        this.parallelThreads = parallelThreads;
         return this;
     }
 
@@ -382,7 +411,42 @@ public final class DecompilerConfigurationBuilder {
 
         value = properties.getProperty("max.method.time.seconds");
         if (value != null) {
-            maxMethodTimeSeconds = Integer.parseInt(value.trim());
+            try {
+                int parsed = Integer.parseInt(value.trim());
+                if (parsed >= 0) {
+                    maxMethodTimeSeconds = parsed;
+                } else {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Ignoring negative max.method.time.seconds value: " + value);
+                    }
+                    LOG.warn("Ignoring negative max.method.time.seconds value: " + value);
+                }
+            } catch (NumberFormatException ex) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Invalid max.method.time.seconds value, keeping default: " + value, ex);
+                }
+                LOG.warn("Invalid max.method.time.seconds value, keeping default: " + value);
+            }
+        }
+
+        value = properties.getProperty("parallel.threads");
+        if (value != null) {
+            try {
+                int parsed = Integer.parseInt(value.trim());
+                if (parsed >= 0) {
+                    parallelThreads = parsed;
+                } else {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Ignoring negative parallel.threads value: " + value);
+                    }
+                    LOG.warn("Ignoring negative parallel.threads value: " + value);
+                }
+            } catch (NumberFormatException ex) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Invalid parallel.threads value, keeping default: " + value, ex);
+                }
+                LOG.warn("Invalid parallel.threads value, keeping default: " + value);
+            }
         }
 
         return this;
@@ -433,7 +497,8 @@ public final class DecompilerConfigurationBuilder {
         DecompilerConfigurationImpl.FilterAndErrorOptions filterAndError =
                 new DecompilerConfigurationImpl.FilterAndErrorOptions(
                         includeClassRegex, excludeClassRegex,
-                        ignoreInvalidBytecode, maxMethodTimeSeconds);
+                        ignoreInvalidBytecode, maxMethodTimeSeconds,
+                        parallelThreads);
 
         return new DecompilerConfigurationImpl(formatting, features, filterAndError);
     }

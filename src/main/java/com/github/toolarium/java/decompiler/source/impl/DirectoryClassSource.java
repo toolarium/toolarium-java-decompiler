@@ -7,12 +7,14 @@ package com.github.toolarium.java.decompiler.source.impl;
 
 import com.github.toolarium.java.decompiler.source.IClassSource;
 import java.io.IOException;
+import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -54,7 +56,7 @@ public class DirectoryClassSource implements IClassSource {
     @Override
     public List<String> listClasses() throws IOException {
         List<String> classes = new ArrayList<>();
-        Files.walkFileTree(rootDirectory, new SimpleFileVisitor<Path>() {
+        Files.walkFileTree(rootDirectory, EnumSet.noneOf(FileVisitOption.class), Integer.MAX_VALUE, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                 String fileName = file.toString().replace('\\', '/');

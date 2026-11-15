@@ -47,11 +47,16 @@ public final class JavaDecompiler implements Callable<Integer> {
     @Parameters(index = "0", description = "Input: .class file, directory, or .jar/.zip archive.")
     private Path input;
 
-    @Option(names = {"-o", "--output"}, description = "Output directory (default: console).")
+    @Option(names = {"-o", "--output"},
+            description = "Output path: a directory, or a .jar/.zip/.war/.ear archive file (default: console).")
     private Path outputDir;
 
     @Option(names = {"-c", "--config"}, description = "Path to a .properties configuration file.")
     private Path configFile;
+
+    @Option(names = {"-t", "--parallel-threads"},
+            description = "Number of threads for parallel decompilation (0 or 1 = sequential).")
+    private Integer parallelThreads;
 
 
     /**
@@ -135,7 +140,7 @@ public final class JavaDecompiler implements Callable<Integer> {
         String source = decompiler.decompile(classBytes);
 
         if (outputDir != null) {
-            try (IResultSaver saver = ResultSaverFactory.getInstance().getFileResultSaver(outputDir)) {
+            try (IResultSaver saver = ResultSaverFactory.getInstance().getResultSaver(outputDir)) {
                 String className = input.getFileName().toString().replace(".class", "");
                 saver.saveSource(className, source);
                 LOG.info("Decompiled 1 class to " + outputDir);
@@ -187,7 +192,7 @@ public final class JavaDecompiler implements Callable<Integer> {
      */
     private void decompileSource(IDecompiler decompiler, IClassSource source) throws IOException {
         if (outputDir != null) {
-            try (IResultSaver saver = ResultSaverFactory.getInstance().getFileResultSaver(outputDir)) {
+            try (IResultSaver saver = ResultSaverFactory.getInstance().getResultSaver(outputDir)) {
                 decompiler.decompileAll(source, saver);
                 LOG.info("Decompiled " + saver.getSavedCount() + " classes to " + outputDir);
             } catch (Exception ex) {
@@ -217,18 +222,21 @@ public final class JavaDecompiler implements Callable<Integer> {
      * @throws IOException if the configuration file cannot be read
      */
     private IDecompiler createDecompiler() throws IOException {
+        DecompilerConfigurationBuilder builder = DecompilerConfigurationBuilder.builder();
+
         if (configFile != null) {
             if (!Files.exists(configFile)) {
                 throw new IOException("Configuration file not found: " + configFile);
             }
-
-            IDecompilerConfiguration config = DecompilerConfigurationBuilder.builder()
-                    .loadFromFile(configFile)
-                    .build();
-            return DecompilerFactory.getInstance().getDecompiler(config);
+            builder.loadFromFile(configFile);
         }
 
-        return DecompilerFactory.getInstance().getDecompiler();
+        if (parallelThreads != null) {
+            builder.parallelThreads(parallelThreads);
+        }
+
+        IDecompilerConfiguration config = builder.build();
+        return DecompilerFactory.getInstance().getDecompiler(config);
     }
 
 

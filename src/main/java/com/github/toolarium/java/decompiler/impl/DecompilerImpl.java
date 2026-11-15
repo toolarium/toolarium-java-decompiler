@@ -50,9 +50,16 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -64,13 +71,18 @@ import org.slf4j.LoggerFactory;
  * Main implementation of {@link IDecompiler} that orchestrates the full decompilation pipeline:
  * class reading, CFG construction, control flow structuring, and source emission.
  *
- * <p>Instances of this class are not thread-safe. Each thread should use its own instance
- * obtained from {@link com.github.toolarium.java.decompiler.api.DecompilerFactory}.
+ * <p>Instances of this class are not thread-safe for concurrent external calls.
+ * Each calling thread should use its own instance obtained from
+ * {@link com.github.toolarium.java.decompiler.api.DecompilerFactory}.
+ * The internal parallel mode ({@code parallelThreads > 1}) is safe because it
+ * creates independent pipeline instances per worker thread.
  *
  * @author patrick
  */
 public class DecompilerImpl implements IDecompiler {
     private static final Logger LOG = LoggerFactory.getLogger(DecompilerImpl.class);
+    private static final long PARALLEL_CLASS_TIMEOUT_SECONDS = 300;
+    private static final int MAX_REGEX_LENGTH = 1000;
     private final IDecompilerConfiguration configuration;
     private final IClassReader classReader;
     private final IControlFlowBuilder cfgBuilder;
@@ -102,17 +114,8 @@ public class DecompilerImpl implements IDecompiler {
         this.simplifier = SimplifierFactory.getInstance().getSimplifier();
         this.reconstructors = buildFilteredReconstructors(this.configuration);
 
-        if (this.configuration.getIncludeClassRegex() != null) {
-            this.includePattern = Pattern.compile(this.configuration.getIncludeClassRegex());
-        } else {
-            this.includePattern = null;
-        }
-
-        if (this.configuration.getExcludeClassRegex() != null) {
-            this.excludePattern = Pattern.compile(this.configuration.getExcludeClassRegex());
-        } else {
-            this.excludePattern = null;
-        }
+        this.includePattern = compileOptionalPattern(this.configuration.getIncludeClassRegex(), "include");
+        this.excludePattern = compileOptionalPattern(this.configuration.getExcludeClassRegex(), "exclude");
     }
 
 
@@ -169,12 +172,15 @@ public class DecompilerImpl implements IDecompiler {
 
         IStructClass structClass = classReader.readClass(classNode);
 
-        Map<String, MethodNode> methodNodeMap = new HashMap<>();
+        Map<String, MethodNode> methodNodeMap = new HashMap<>(classNode.methods.size() * 4 / 3 + 1);
         for (MethodNode mn : classNode.methods) {
             methodNodeMap.put(mn.name + mn.desc, mn);
         }
 
         IBytecodeTranslator translator = BytecodeTranslatorFactory.getInstance().getBytecodeTranslator();
+        if (configuration.getMaxMethodTimeSeconds() > 0) {
+            translator.setMaxTranslationTimeSeconds(configuration.getMaxMethodTimeSeconds());
+        }
         IClassDeclaration classDecl = buildClassDeclaration(structClass, classNode, methodNodeMap,
                 translator);
 
@@ -204,23 +210,25 @@ public class DecompilerImpl implements IDecompiler {
             LOG.debug("Decompiling " + classNames.size() + " classes.");
         }
 
-        // First pass: decompile all classes to intermediate declarations
-        Map<String, DecompileResult> results = new LinkedHashMap<>();
-        List<String> failedClasses = new ArrayList<>();
+        List<String> includedClasses = new ArrayList<>();
         for (String className : classNames) {
-            if (!isClassIncluded(className)) {
-                continue;
+            if (isClassIncluded(className)) {
+                includedClasses.add(className);
             }
+        }
 
-            try {
-                byte[] classBytes = source.readClass(className);
-                results.put(className, decompileToDeclaration(classBytes));
-            } catch (IOException ex) {
-                failedClasses.add(className);
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Failed to decompile class: " + className, ex);
-                }
-            }
+        // First pass: decompile all classes to intermediate declarations
+        Map<String, DecompileResult> results;
+        List<String> failedClasses;
+        int threads = configuration.getParallelThreads();
+        if (threads > 1 && includedClasses.size() > 1) {
+            ParallelDecompileOutcome outcome = decompileClassesParallel(source, includedClasses, threads);
+            results = outcome.getResults();
+            failedClasses = outcome.getFailedClasses();
+        } else {
+            results = new LinkedHashMap<>();
+            failedClasses = new ArrayList<>();
+            decompileClassesSequential(source, includedClasses, results, failedClasses);
         }
 
         // Second pass: identify inner class relationships (named, anonymous, and local)
@@ -421,10 +429,18 @@ public class DecompilerImpl implements IDecompiler {
             interfaceTypes = buildRawInterfaceTypes(structClass, typeFactory);
         }
 
+        // Build field node lookup for O(1) access by name
+        Map<String, org.objectweb.asm.tree.FieldNode> fieldNodeMap = new HashMap<>();
+        if (classNode != null) {
+            for (org.objectweb.asm.tree.FieldNode fn : classNode.fields) {
+                fieldNodeMap.put(fn.name, fn);
+            }
+        }
+
         // Fields
         List<IFieldDeclaration> fields = new ArrayList<>();
         for (IStructField field : structClass.getFields()) {
-            fields.add(buildFieldDeclaration(field, classNode));
+            fields.add(buildFieldDeclaration(field, fieldNodeMap));
         }
 
         // Methods
@@ -493,27 +509,22 @@ public class DecompilerImpl implements IDecompiler {
     /**
      * Build a field declaration, extracting constant initializers when available.
      *
-     * @param field     the struct field
-     * @param classNode the ASM class node for constant value lookup
+     * @param field        the struct field
+     * @param fieldNodeMap the pre-built map from field name to ASM FieldNode
      * @return the field declaration
      */
-    private IFieldDeclaration buildFieldDeclaration(IStructField field, ClassNode classNode) {
+    private IFieldDeclaration buildFieldDeclaration(IStructField field, Map<String, org.objectweb.asm.tree.FieldNode> fieldNodeMap) {
         IType fieldType = resolveFieldType(field);
         IExpression initializer = null;
 
         // Look up constant value from ASM FieldNode
-        if (classNode != null) {
-            for (org.objectweb.asm.tree.FieldNode fn : classNode.fields) {
-                if (field.getName().equals(fn.name) && fn.value != null) {
-                    Object value = fn.value;
-                    if ("Z".equals(field.getDescriptor()) && value instanceof Integer) {
-                        value = ((Integer) value) != 0;
-                    }
-                    initializer = ExpressionModelFactory.getInstance()
-                            .getConstantExpression(fieldType, value);
-                    break;
-                }
+        org.objectweb.asm.tree.FieldNode fn = fieldNodeMap.get(field.getName());
+        if (fn != null && fn.value != null) {
+            Object value = fn.value;
+            if ("Z".equals(field.getDescriptor()) && value instanceof Integer) {
+                value = ((Integer) value) != 0;
             }
+            initializer = ExpressionModelFactory.getInstance().getConstantExpression(fieldType, value);
         }
 
         return DeclarationModelFactory.getInstance().getFieldDeclaration(
@@ -893,7 +904,7 @@ public class DecompilerImpl implements IDecompiler {
             header.append(sep);
         }
 
-        return header.toString() + source;
+        return header.append(source).toString();
     }
 
 
@@ -915,6 +926,41 @@ public class DecompilerImpl implements IDecompiler {
         }
 
         return true;
+    }
+
+
+    /**
+     * Compile an optional regex pattern, returning null if the regex is null or invalid.
+     * Invalid patterns are logged as warnings so the decompiler continues with no filter
+     * rather than failing at construction time.
+     *
+     * @param regex the regex string, or null
+     * @param label a label for log messages (e.g., "include" or "exclude")
+     * @return the compiled pattern, or null if regex is null or invalid
+     */
+    private static Pattern compileOptionalPattern(String regex, String label) {
+        if (regex == null) {
+            return null;
+        }
+
+        if (regex.length() > MAX_REGEX_LENGTH) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Regex for " + label + " class filter exceeds maximum length ("
+                        + regex.length() + " > " + MAX_REGEX_LENGTH + "), filter will be ignored.");
+            }
+            LOG.warn("Regex for " + label + " class filter exceeds maximum length, filter will be ignored.");
+            return null;
+        }
+
+        try {
+            return Pattern.compile(regex);
+        } catch (PatternSyntaxException ex) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Invalid " + label + " class regex, filter will be ignored: " + regex, ex);
+            }
+            LOG.warn("Invalid " + label + " class regex, filter will be ignored: " + regex);
+            return null;
+        }
     }
 
 
@@ -975,5 +1021,149 @@ public class DecompilerImpl implements IDecompiler {
         }
 
         return true;
+    }
+
+
+    /**
+     * Decompile classes sequentially, collecting results and failures.
+     *
+     * @param source         the class source
+     * @param classNames     the class names to decompile
+     * @param results        the map to populate with decompile results
+     * @param failedClasses  the list to populate with failed class names
+     */
+    private void decompileClassesSequential(IClassSource source, List<String> classNames,
+                                             Map<String, DecompileResult> results,
+                                             List<String> failedClasses) {
+        for (String className : classNames) {
+            try {
+                byte[] classBytes = source.readClass(className);
+                results.put(className, decompileToDeclaration(classBytes));
+            } catch (Exception ex) {
+                failedClasses.add(className);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Failed to decompile class: " + className, ex);
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Decompile classes in parallel using a work-stealing thread pool.
+     * Each class is decompiled independently, and results are collected after all tasks complete.
+     * Per-class results are retrieved with a timeout to prevent hanging on pathological input.
+     *
+     * @param source       the class source
+     * @param classNames   the class names to decompile
+     * @param threadCount  the number of threads in the pool
+     * @return the parallel decompile outcome containing results and failures
+     */
+    private ParallelDecompileOutcome decompileClassesParallel(IClassSource source,
+                                                               List<String> classNames,
+                                                               int threadCount) {
+        int poolSize = Math.min(threadCount, classNames.size());
+        ExecutorService executor = Executors.newWorkStealingPool(poolSize);
+        Map<String, Future<DecompileResult>> futures = new LinkedHashMap<>();
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Parallel decompilation with " + poolSize + " threads for "
+                    + classNames.size() + " classes.");
+        }
+
+        // Pre-read all class bytes on a single thread to avoid contention on the source
+        Map<String, byte[]> classBytesMap = new LinkedHashMap<>();
+        List<String> failedClasses = new ArrayList<>();
+        for (String className : classNames) {
+            try {
+                classBytesMap.put(className, source.readClass(className));
+            } catch (IOException ex) {
+                failedClasses.add(className);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Failed to read class: " + className, ex);
+                }
+            }
+        }
+
+        for (Map.Entry<String, byte[]> entry : classBytesMap.entrySet()) {
+            futures.put(entry.getKey(), executor.submit(() -> decompileToDeclaration(entry.getValue())));
+        }
+
+        executor.shutdown();
+
+        Map<String, DecompileResult> results = new LinkedHashMap<>();
+
+        try {
+            for (Entry<String, Future<DecompileResult>> entry : futures.entrySet()) {
+                String className = entry.getKey();
+                try {
+                    results.put(className, entry.getValue().get(PARALLEL_CLASS_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+                } catch (TimeoutException tex) {
+                    entry.getValue().cancel(true);
+                    failedClasses.add(className);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Decompilation timed out for class: " + className, tex);
+                    }
+                } catch (InterruptedException iex) {
+                    Thread.currentThread().interrupt();
+                    failedClasses.add(className);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Decompilation interrupted for class: " + className, iex);
+                    }
+                } catch (Exception ex) {
+                    failedClasses.add(className);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Failed to decompile class: " + className, ex);
+                    }
+                }
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        return new ParallelDecompileOutcome(results, failedClasses);
+    }
+
+
+    /**
+     * Holds the outcome of a parallel decompilation run.
+     *
+     * @author patrick
+     */
+    private static final class ParallelDecompileOutcome {
+        private final Map<String, DecompileResult> results;
+        private final List<String> failedClasses;
+
+
+        /**
+         * Constructor for ParallelDecompileOutcome.
+         *
+         * @param results       the decompile results keyed by class name
+         * @param failedClasses the list of class names that failed
+         */
+        ParallelDecompileOutcome(Map<String, DecompileResult> results, List<String> failedClasses) {
+            this.results = results;
+            this.failedClasses = failedClasses;
+        }
+
+
+        /**
+         * Get the decompile results.
+         *
+         * @return the results map
+         */
+        Map<String, DecompileResult> getResults() {
+            return results;
+        }
+
+
+        /**
+         * Get the failed class names.
+         *
+         * @return the failed class list
+         */
+        List<String> getFailedClasses() {
+            return failedClasses;
+        }
     }
 }

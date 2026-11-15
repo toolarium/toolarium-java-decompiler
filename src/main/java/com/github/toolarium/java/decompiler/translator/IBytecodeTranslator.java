@@ -26,4 +26,14 @@ public interface IBytecodeTranslator {
      * @return the translated statements
      */
     List<IStatement> translate(MethodNode methodNode, String className);
+
+
+    /**
+     * Set the maximum time in seconds allowed for translating a single method.
+     * A value of zero or negative disables the limit. When the limit is exceeded,
+     * the translation returns a partial result.
+     *
+     * @param seconds the maximum translation time in seconds
+     */
+    void setMaxTranslationTimeSeconds(int seconds);
 }

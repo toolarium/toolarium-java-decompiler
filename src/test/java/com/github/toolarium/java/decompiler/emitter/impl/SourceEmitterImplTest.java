@@ -630,6 +630,89 @@ public class SourceEmitterImplTest {
 
 
     /**
+     * Test that a plain string without special characters passes through the escape fast-path.
+     */
+    @Test
+    void testEscapeStringFastPath() {
+        IType stringType = typeFactory.getObjectType(STRING_TYPE);
+        IExpression expr = exprFactory.getConstantExpression(stringType, "plain text");
+        IStatement stmt = stmtFactory.getReturnStatement(null, expr);
+        String source = emitter.emitStatement(stmt);
+
+        assertTrue(source.contains("\"plain text\""));
+    }
+
+
+    /**
+     * Test that special characters in strings are properly escaped.
+     * Uses a tab character (not newline, since newlines trigger text block emission).
+     */
+    @Test
+    void testEscapeStringSpecialChars() {
+        IType stringType = typeFactory.getObjectType(STRING_TYPE);
+        IExpression expr = exprFactory.getConstantExpression(stringType, "col1\tcol2\r");
+        IStatement stmt = stmtFactory.getExpressionStatement(null, expr);
+        String source = emitter.emitStatement(stmt);
+
+        assertTrue(source.contains("\\t"));
+        assertTrue(source.contains("\\r"));
+    }
+
+
+    /**
+     * Test that a string containing backslash and double quote is escaped.
+     */
+    @Test
+    void testEscapeStringBackslashAndQuote() {
+        IType stringType = typeFactory.getObjectType(STRING_TYPE);
+        IExpression expr = exprFactory.getConstantExpression(stringType, "path\\to\\file");
+        IStatement stmt = stmtFactory.getExpressionStatement(null, expr);
+        String source = emitter.emitStatement(stmt);
+
+        assertTrue(source.contains("\\\\"));
+    }
+
+
+    /**
+     * Test that emitting a deeply nested class grows the indent cache beyond its initial size.
+     */
+    @Test
+    void testIndentCacheGrowth() {
+        DeclarationModelFactory declFactory = DeclarationModelFactory.getInstance();
+        IType intType = typeFactory.getPrimitiveType('I');
+
+        IStatement body = stmtFactory.getBlockStatement(null,
+                Collections.singletonList(stmtFactory.getReturnStatement(null,
+                        exprFactory.getConstantExpression(intType, 0))));
+        IMethodDeclaration method = declFactory.getMethodDeclaration(
+                CommonModelFactory.getInstance().getAccessFlags(0x0001),
+                "getValue", intType, Collections.emptyList(),
+                Collections.emptyList(), body, false, Collections.emptyList());
+
+        IClassDeclaration inner = declFactory.getClassDeclaration(
+                CommonModelFactory.getInstance().getAccessFlags(0x0001),
+                "Inner", null, Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.singletonList(method),
+                Collections.emptyList(), Collections.emptyList(),
+                null, false);
+
+        IClassDeclaration outer = declFactory.getClassDeclaration(
+                CommonModelFactory.getInstance().getAccessFlags(0x0001),
+                "Outer", null, Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList(),
+                Collections.singletonList(inner), Collections.emptyList(),
+                null, false);
+
+        String source = emitter.emitClass(outer);
+
+        assertNotNull(source);
+        assertTrue(source.contains("class Inner"));
+        assertTrue(source.contains("return 0;"));
+    }
+
+
+    /**
      * Test factory singleton.
      */
     @Test
